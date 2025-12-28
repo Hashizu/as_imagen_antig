@@ -156,7 +156,7 @@ class ImageGenerator:
                     handler.write(img_data)
 
             print(f"画像を保存しました: {output_path}")
-
+            return output_path
 
             
         except Exception as e:

@@ -12,6 +12,9 @@ class ImageProcessor:
         """
         try:
             # 画像読み込み
+            if not os.path.exists(input_path):
+                raise FileNotFoundError(f"入力ファイルが見つかりません: {input_path}")
+            
             # Windowsのパスで非ASCII文字が含まれる場合の対応
             # cv2.imread はWindows上の非ASCIIパスをうまく扱えないため、
             # バイナリとして読み込んでからデコードします。
