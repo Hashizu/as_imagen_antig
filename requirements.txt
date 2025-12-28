@@ -1,0 +1,7 @@
+openai
+opencv-python
+python-dotenv
+pandas
+requests
+tqdm
+pillow
