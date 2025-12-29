@@ -7,6 +7,10 @@ exmaple/
 *.png
 *.jpg
 *.svg
+data/
+example/
+submissions/
+history.md
 
 
 # Byte-compiled / optimized / DLL files
