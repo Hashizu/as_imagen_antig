@@ -74,9 +74,12 @@ class SubmissionManager:
                     prompt = self._find_prompt_from_source(abs_path)
 
                 # タグ生成 (MetadataManager利用)
-                # ユーザー指定タグはここでは簡易的に空リストとするか、GUIから渡す必要がある
-                # 今回は batch処理なので、キーワードに関連するタグのみ生成させる
-                meta = self.metadata_mgr.get_image_metadata(prompt, user_tags=[])
+                # DBから保存されたタグを取得
+                stored_tags_str = img_info.get('tags', "")
+                stored_tags = [t.strip() for t in stored_tags_str.split(",") if t.strip()] if stored_tags_str else []
+                
+                # MetadataManagerに渡す
+                meta = self.metadata_mgr.get_image_metadata(prompt, user_tags=stored_tags)
 
                 csv_data.append({
                     "filename": os.path.basename(abs_path), # 元ファイル名

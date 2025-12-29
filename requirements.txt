@@ -6,3 +6,4 @@ requests
 tqdm
 pillow
 streamlit
+numpy<2

@@ -58,17 +58,19 @@ class StateManager:
 
             if rel_path not in self.db:
                 # 新規発見ファイル
+                prompt, tags = self._extract_prompt_if_possible(file_path)
                 self.db[rel_path] = {
                     "status": STATUS_UNPROCESSED,
                     "added_at": datetime.now().isoformat(),
-                    "prompt": self._extract_prompt_if_possible(file_path) # 可能ならプロンプトを取得
+                    "prompt": prompt,
+                    "tags": tags
                 }
                 updated = True
         
         if updated:
             self.save_db()
 
-    def _extract_prompt_if_possible(self, file_path: str) -> str:
+    def _extract_prompt_if_possible(self, file_path: str) -> tuple[str, str]:
         """
         prompt.csvがあればそこからプロンプトを読み取る（簡易実装）
         """
@@ -83,10 +85,10 @@ class StateManager:
                 # filenameカラムで検索
                 row = df[df['filename'] == filename]
                 if not row.empty:
-                    return row.iloc[0]['prompt']
+                    return row.iloc[0]['prompt'], row.iloc[0].get('tags', "")
         except Exception:
             pass
-        return ""
+        return "", ""
 
     def get_images_by_status(self, status: str) -> List[Dict]:
         """指定したステータスの画像リストを返す"""

@@ -53,98 +53,111 @@ def main():
 
     # --- Tab 2: Gallery ---
     with tab2:
-        col_head, col_filter = st.columns([2, 1])
-        with col_head:
-            st.header("Image Gallery")
-        with col_filter:
-            # ステータスフィルター
-            status_filter = st.selectbox(
-                "Filter by Status", 
-                [STATUS_UNPROCESSED, STATUS_REGISTERED, STATUS_EXCLUDED],
-                index=0
-            )
+        st.header("Image Gallery")
         
-        state_mgr = StateManager()
-        # 選択されたステータスの画像を取得
-        display_images = state_mgr.get_images_by_status(status_filter)
+        # ステータスごとのタブを作成
+        gallery_tab1, gallery_tab2, gallery_tab3 = st.tabs(["Unprocessed", "Registered", "Excluded"])
         
-        if not display_images:
-            st.info(f"No images found with status: {status_filter}")
+        with gallery_tab1:
+            render_gallery_content(STATUS_UNPROCESSED)
+            
+        with gallery_tab2:
+            render_gallery_content(STATUS_REGISTERED)
+            
+        with gallery_tab3:
+            render_gallery_content(STATUS_EXCLUDED)
+
+
+def render_gallery_content(status_filter):
+    """ギャラリーのコンテンツを描画するヘルパー関数"""
+    state_mgr = StateManager()
+    display_images = state_mgr.get_images_by_status(status_filter)
+    
+    if not display_images:
+        st.info(f"No images found in {status_filter}.")
+        return
+
+    st.write(f"Found {len(display_images)} images.")
+    
+    if 'selected_images' not in st.session_state:
+        st.session_state.selected_images = []
+
+    # 一括アクションバー
+    st.divider()
+    
+    selected_paths = []
+    
+    col_act1, col_act2 = st.columns([1, 4])
+    
+    # ボタンのキーをユニークにするためにstatus_filterを使用
+    key_suffix = f"_{status_filter}"
+    
+    with col_act1:
+        if status_filter == STATUS_UNPROCESSED:
+            if st.button("📤 Register Selected", key=f"btn_reg{key_suffix}"):
+                 process_registration(keyword="batch_submit", status_filter=status_filter)
+                 st.rerun()
         else:
-            st.write(f"Found {len(display_images)} images.")
-            
-            # 選択用ステート管理
-            # フィルター切り替え時に選択状態をクリアしないとID衝突などが起きる可能性があるが、
-            # ID(キー)はパスベースなのでユニーク。ただし選択したまま別画面に行くと混乱するかも。
-            # 一旦セッションはクリアしないが、ボタン押下時にフィルタと整合性を取る。
-            
-            if 'selected_images' not in st.session_state:
-                st.session_state.selected_images = []
-
-            # 一括アクションバー (フィルタによって出し分け)
-            st.divider()
-            
-            # 選択された画像のパスを保持するリスト
-            selected_paths = []
-            
-            # グリッド描画と選択収集
-            # アクションボタンをグリッドの上に置くか下に置くか。上に置く場合、selected_pathsがまだ空。
-            # Streamlitのフロー上、ボタン押下時のcallbackでsession_state['current_selection']を見る形なら上に置ける。
-            
-            col_act1, col_act2 = st.columns([1, 4])
-            
-            with col_act1:
-                if status_filter == STATUS_UNPROCESSED:
-                    if st.button("📤 Register Selected"):
-                         process_registration(keyword="batch_submit")
-                         st.rerun()
-                else:
-                    # 登録済 or 除外 の場合は「元に戻す」
-                    if st.button("↩️ Revert to Unprocessed"):
-                        process_revert()
-                        st.rerun()
-                        
-            with col_act2:
-                if status_filter == STATUS_UNPROCESSED:
-                    if st.button("🗑️ Exclude Selected"):
-                        process_exclusion()
-                        st.rerun()
-                # 他のステータスの時は除外ボタンは不要（Revertしてからやり直せば良い）
-
-            st.divider()
-
-            # グリッド表示
-            cols = st.columns(4)
-            for idx, img in enumerate(display_images):
-                file_path = img['path']
+            if st.button("↩️ Revert to Unprocessed", key=f"btn_rev{key_suffix}"):
+                process_revert(status_filter)
+                st.rerun()
                 
-                with cols[idx % 4]:
-                    try:
-                        st.image(file_path, use_container_width=True)
-                        
-                        # フィルタ切り替えでrerunすると前のcheckboxのstateが残る場合がある。
-                        # keyにstatusを含めることでユニークにする
-                        unique_key = f"chk_{status_filter}_{file_path}"
-                        
-                        # デフォルト選択状態: 未処理ならON、それ以外はOFFが自然か？
-                        # 全部ONだと「除外したのを戻したい」時に全部チェック外すのが面倒。
-                        # 未処理画面=選別フロー(基本Keep) -> Default ON
-                        # 履歴画面=検索フロー(基本View) -> Default OFF
-                        default_val = (status_filter == STATUS_UNPROCESSED)
-                        
-                        is_selected = st.checkbox("Select", key=unique_key, value=default_val)
-                        if is_selected:
-                            selected_paths.append(file_path)
-                            
-                        with st.expander("Details"):
-                            st.caption(f"Prompt: {img.get('prompt', '')[:100]}...")
-                            st.caption(f"Date: {img.get('added_at', '')}")
+    with col_act2:
+        if status_filter == STATUS_UNPROCESSED:
+            if st.button("🗑️ Exclude Selected", key=f"btn_exc{key_suffix}"):
+                process_exclusion(status_filter)
+                st.rerun()
 
-                    except Exception as e:
-                        st.error(f"Error loading {file_path}")
+    st.divider()
 
-            # 選択状態をSession Stateに保存
-            st.session_state.current_selection = selected_paths
+    # グリッド表示
+    cols = st.columns(4)
+    for idx, img in enumerate(display_images):
+        file_path = img['path']
+        
+        with cols[idx % 4]:
+            try:
+                st.image(file_path, width="stretch")
+                
+                # keyにstatusを含めることでユニークにする
+                unique_key = f"chk_{status_filter}_{file_path}"
+                
+                # タブ切り替え時はそれぞれのタブでの選択状態を維持したい
+                # しかしシンプルにするため、画面遷移（rerun）で選択はクリアされる前提とするか、
+                # あるいは `current_selection` を辞書型にして `status` ごとに持つか。
+                # ここではシンプルに「現在のタブの選択」のみを扱うようにするが、
+                # st.checkboxはkeyが同じなら状態を保持する。
+                
+                # デフォルト値ロジック
+                # Unprocessedタブは選別作業用なので、デフォルトONにしておくと「悪いものを外す」フローになる。
+                # Registered/Excludedは確認用なので、デフォルトOFF。
+                default_val = (status_filter == STATUS_UNPROCESSED)
+                
+                # ただしrerun直後のデフォルト値復元を考慮する必要があるが、
+                # keyが一意ならStreamlitがstateを覚えてくれるはず。
+                
+                is_selected = st.checkbox("Select", key=unique_key, value=default_val)
+                if is_selected:
+                    selected_paths.append(file_path)
+                    
+                with st.expander("Details"):
+                    st.caption(f"Prompt: {img.get('prompt', '')[:100]}...")
+                    st.caption(f"Date: {img.get('added_at', '')}")
+
+            except Exception as e:
+                st.error(f"Error loading {file_path}")
+
+    # 選択状態をSession Stateに保存 (辞書型で管理したほうが安全だが、今回はシンプルに処理直前に取得する形をとる)
+    # process_xxx() 関数内では、st.session_stateのwidget keyから直接値を取るか、
+    # あるいはここで保存した値を渡すか。
+    # 複数のタブを行き来した場合、 `current_selection` が上書きされるとまずい。
+    # よって、 `current_selection` は 「現在アクティブなタブの選択」 ではなく、
+    # 「処理実行時に参照するための、各タブごとの選択状態」であるべきだが、
+    # Streamlitの仕様上、checkboxの値は常に session_state[unique_key] にある。
+    # process関数側で "chk_{status_filter}_" で始まるキーを集計するのが確実。
+    
+    # 互換性のため、一旦ここに保存するが、キーを分ける
+    st.session_state[f'selection_{status_filter}'] = selected_paths
 
 
 def run_generation(keyword, tags, n_ideas, model, style, size):
@@ -189,6 +202,10 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
 
     # CSV保存
     if csv_data:
+        # 必須タグを全レコードに追加
+        for item in csv_data:
+            item['tags'] = tags
+            
         df = pd.DataFrame(csv_data)
         df.to_csv(os.path.join(images_dir, "prompt.csv"), index=False, encoding='utf-8-sig')
 
@@ -196,9 +213,9 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
     state_mgr.scan_and_sync()
 
 
-def process_registration(keyword):
+def process_registration(keyword, status_filter=STATUS_UNPROCESSED):
     """選択された画像を登録処理へ回す"""
-    selected = st.session_state.get('current_selection', [])
+    selected = st.session_state.get(f'selection_{status_filter}', [])
     if not selected:
         st.warning("No images selected.")
         return
@@ -223,9 +240,9 @@ def process_registration(keyword):
     st.success("Registration Complete!")
 
 
-def process_exclusion():
+def process_exclusion(status_filter=STATUS_UNPROCESSED):
     """選択された画像を除外ステータスにする"""
-    selected = st.session_state.get('current_selection', [])
+    selected = st.session_state.get(f'selection_{status_filter}', [])
     if not selected:
         st.warning("No images selected.")
         return
@@ -236,9 +253,9 @@ def process_exclusion():
 
 
 
-def process_revert():
+def process_revert(status_filter):
     """選択された画像を未処理ステータスに戻す"""
-    selected = st.session_state.get('current_selection', [])
+    selected = st.session_state.get(f'selection_{status_filter}', [])
     if not selected:
         st.warning("No images selected.")
         return

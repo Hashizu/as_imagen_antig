@@ -72,13 +72,15 @@
     "updated_at": "2025-12-29T00:20:06.301955"
   },
   "output/2025-12-29T00-13-26_縦に積まれた段ボール/generated_images/img_001.png": {
-    "status": "UNPROCESSED",
+    "status": "REGISTERED",
     "added_at": "2025-12-29T00:14:30.703994",
-    "prompt": "A minimalist illustration depicting vertically stacked cardboard boxes, with each box characterized by subtle differences in hue, limited to a palette of five colors. The boxes' details are minimized to create a simple yet refined design that captures an understated elegance. The design is set against a transparent black backdrop that enhances the shapes of the boxes, each gracefully outlined with delicate, hand-drawn lines. The ample negative space around the boxes accentuates their forms, offering a modest and restrained beauty reminiscent of Japanese aesthetics. The image is in modern illustration style, with simple, clean lines and no text."
+    "prompt": "A minimalist illustration depicting vertically stacked cardboard boxes, with each box characterized by subtle differences in hue, limited to a palette of five colors. The boxes' details are minimized to create a simple yet refined design that captures an understated elegance. The design is set against a transparent black backdrop that enhances the shapes of the boxes, each gracefully outlined with delicate, hand-drawn lines. The ample negative space around the boxes accentuates their forms, offering a modest and restrained beauty reminiscent of Japanese aesthetics. The image is in modern illustration style, with simple, clean lines and no text.",
+    "updated_at": "2025-12-29T00:40:43.182446"
   },
   "output/2025-12-29T00-13-26_縦に積まれた段ボール/generated_images/img_002.png": {
-    "status": "UNPROCESSED",
+    "status": "REGISTERED",
     "added_at": "2025-12-29T00:14:30.704994",
-    "prompt": "A minimalist illustration depicting three stacked cardboard boxes of varying sizes. The boxes are outlined in black hand-drawn lines of different thicknesses, creating a textured appearance. Each box features subtle shadowing in slightly different tonalities, adding depth to the composition. The background is transparent, embracing negative space to highlight the simplicity and sophistication characteristic of contemporary Japanese art. The color palette is limited to a maximum of five shades, enhancing the clean and refined aesthetic. The overall style is modern, using ample negative space and eschewing facial features and text, set against a white backdrop."
+    "prompt": "A minimalist illustration depicting three stacked cardboard boxes of varying sizes. The boxes are outlined in black hand-drawn lines of different thicknesses, creating a textured appearance. Each box features subtle shadowing in slightly different tonalities, adding depth to the composition. The background is transparent, embracing negative space to highlight the simplicity and sophistication characteristic of contemporary Japanese art. The color palette is limited to a maximum of five shades, enhancing the clean and refined aesthetic. The overall style is modern, using ample negative space and eschewing facial features and text, set against a white backdrop.",
+    "updated_at": "2025-12-29T00:40:43.182446"
   }
 }
