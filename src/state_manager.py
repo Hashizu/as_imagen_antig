@@ -58,12 +58,13 @@ class StateManager:
 
             if rel_path not in self.db:
                 # 新規発見ファイル
-                prompt, tags = self._extract_prompt_if_possible(file_path)
+                prompt, tags, keyword = self._extract_prompt_if_possible(file_path)
                 self.db[rel_path] = {
                     "status": STATUS_UNPROCESSED,
                     "added_at": datetime.now().isoformat(),
                     "prompt": prompt,
-                    "tags": tags
+                    "tags": tags,
+                    "keyword": keyword
                 }
                 updated = True
         
@@ -85,10 +86,15 @@ class StateManager:
                 # filenameカラムで検索
                 row = df[df['filename'] == filename]
                 if not row.empty:
-                    return row.iloc[0]['prompt'], row.iloc[0].get('tags', "")
+                    # keywordカラムがあれば取得、なければ空文字
+                    keyword = row.iloc[0].get('keyword', "")
+                    # NaNの場合は空文字にする
+                    if pd.isna(keyword):
+                        keyword = ""
+                    return row.iloc[0]['prompt'], row.iloc[0].get('tags', ""), keyword
         except Exception:
             pass
-        return "", ""
+        return "", "", ""
 
     def get_images_by_status(self, status: str) -> List[Dict]:
         """指定したステータスの画像リストを返す"""
@@ -100,6 +106,9 @@ class StateManager:
                     item = data.copy()
                     item["path"] = path
                     result.append(item)
+        
+        # added_atの降順（新しい順）にソート
+        result.sort(key=lambda x: x.get("added_at", ""), reverse=True)
         return result
 
     def get_unprocessed_images(self) -> List[Dict]:

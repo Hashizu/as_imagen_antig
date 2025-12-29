@@ -16,27 +16,55 @@ import pandas as pd
 load_dotenv()
 API_KEY = os.getenv("OPENAI_API_KEY")
 
-st.set_page_config(layout="wide", page_title="AS Image Generator GUI")
+if "keyword_input" not in st.session_state:
+    st.session_state.keyword_input = ""
+if "tags_input" not in st.session_state:
+    st.session_state.tags_input = ""
+
+@st.dialog("Image Details")
+def view_image_details(image_path, prompt, tags, keyword):
+    st.image(image_path, use_container_width=True)
+    st.caption(f"Prompt: {prompt}")
+    st.caption(f"Tags: {tags}")
+    if keyword:
+        st.caption(f"Keyword: {keyword}")
+    
+    if st.button("✨ Use Settings for Generation", type="primary"):
+        # キーワードがあればそれを使う。なければプロンプトで代用。
+        if keyword:
+             st.session_state.keyword_input = keyword
+        else:
+             st.session_state.keyword_input = prompt
+             
+        st.session_state.tags_input = tags
+        st.toast("Settings loaded! Please switch to 'Generate' tab.", icon="✅")
+        st.rerun()
 
 def main():
-    st.title("🎨 AS Image Generator & Gallery")
+    st.set_page_config(layout="wide", page_title="AS画像屋さん")
+    st.title("🎨 AS画像屋さん")
 
     if not API_KEY:
         st.error("OPENAI_API_KEY not found in .env")
         return
 
-    # タブ設定
-    tab1, tab2 = st.tabs(["🚀 Generate", "🖼️ Gallery & Submit"])
+    # サイドバーナビゲーション
+    # ModeもPillsにして統一感を出す
+    mode = st.sidebar.pills("Navigation", ["🚀 Generate", "🖼️ Gallery"], default="🚀 Generate")
+    if not mode:
+        mode = "🚀 Generate"
+    st.sidebar.divider()
 
-    # --- Tab 1: Generate ---
-    with tab1:
+    # --- Mode: Generate ---
+    if mode == "🚀 Generate":
         st.header("New Generation")
         
-        keyword = st.text_input("Keyword (Main Theme)", placeholder="e.g. minimalist cat")
+        # keyを指定してsession_stateと紐付ける
+        keyword = st.text_input("Keyword (Main Theme)", placeholder="e.g. minimalist cat", key="keyword_input")
 
         col1, col2 = st.columns(2)
         with col1:
-            tags = st.text_input("Mandatory Tags", placeholder="comma, separated, tags")
+            tags = st.text_input("Mandatory Tags", placeholder="comma, separated, tags", key="tags_input")
             n_images = st.number_input("Number of Variations", min_value=1, max_value=20, value=5)
             size = st.selectbox("Size", ["1024x1024", "1024x1536", "1536x1024"], index=0)
 
@@ -44,22 +72,17 @@ def main():
             model = st.selectbox("Model", ["gpt-image-1.5", "dall-e-3"], index=0)
             
             # スタイル定義を取得して動的に設定
-            # インスタンス化しなくても定義自体はimportできるが、クラスメソッドにしたので一旦インスタンスからとるか、
-            # あるいは直接importする方が綺麗。ここではgeneratorを通して取得する。
             gen_instance = ImageGenerator(API_KEY)
             styles = gen_instance.get_styles()
             style_keys = list(styles.keys())
             style_labels = [styles[k]["label"] for k in style_keys]
             
-            # ラベルで選択させ、キーに変換する
             selected_label = st.selectbox("Style", style_labels, index=0)
-            # ラベルからキーを逆引き
             style = next(k for k, v in styles.items() if v["label"] == selected_label)
             
             # スタイルの説明を表示
             with st.expander("Style Details"):
                 st.info(f"Style Prompt: {styles[style]['idea_prompt']}")
-
         
         if st.button("Generate Images", type="primary"):
             if not keyword:
@@ -69,21 +92,31 @@ def main():
                     run_generation(keyword, tags, n_images, model, style, size)
                 st.success("Generation Complete! Go to Gallery tab to review.")
 
-    # --- Tab 2: Gallery ---
-    with tab2:
+    # --- Mode: Gallery ---
+    elif mode == "🖼️ Gallery":
         st.header("Image Gallery")
         
-        # ステータスごとのタブを作成
-        gallery_tab1, gallery_tab2, gallery_tab3 = st.tabs(["Unprocessed", "Registered", "Excluded"])
+        # サイドバーでフィルタ選択 (pillsを使用)
+        status_filter_label = st.sidebar.pills(
+            "Filter Status", 
+            ["Unprocessed", "Registered", "Excluded"],
+            default="Unprocessed"
+        )
         
-        with gallery_tab1:
-            render_gallery_content(STATUS_UNPROCESSED)
-            
-        with gallery_tab2:
-            render_gallery_content(STATUS_REGISTERED)
-            
-        with gallery_tab3:
-            render_gallery_content(STATUS_EXCLUDED)
+        # pillsは未選択(None)がありうるが、default指定していれば基本大丈夫。
+        # 万が一NoneならUnprocessedにする
+        if not status_filter_label:
+            status_filter_label = "Unprocessed"
+        
+        # ラベルから定数へ変換
+        status_map = {
+            "Unprocessed": STATUS_UNPROCESSED,
+            "Registered": STATUS_REGISTERED,
+            "Excluded": STATUS_EXCLUDED
+        }
+        status_filter = status_map[status_filter_label]
+        
+        render_gallery_content(status_filter)
 
 
 def render_gallery_content(status_filter):
@@ -93,6 +126,11 @@ def render_gallery_content(status_filter):
     
     if not display_images:
         st.info(f"No images found in {status_filter}.")
+        # 画像がなくても検索などはできるようにしたいが、今回は画像を返すだけ
+        # 画像がない場合でも再度スキャンできるボタンがあると便利かも
+        if st.sidebar.button("Forced Rescan"):
+            state_mgr.scan_and_sync()
+            st.rerun()
         return
 
     st.write(f"Found {len(display_images)} images.")
@@ -100,81 +138,61 @@ def render_gallery_content(status_filter):
     if 'selected_images' not in st.session_state:
         st.session_state.selected_images = []
 
-    # 一括アクションバー
-    st.divider()
+    # サイドバーにアクションボタンを配置
+    st.sidebar.divider()
+    st.sidebar.subheader("Actions")
     
-    selected_paths = []
+    selected_paths_key = f'selection_{status_filter}'
+    # 現在の選択数を表示してあげる
+    current_selection = st.session_state.get(selected_paths_key, [])
+    # 選択状態はリルートで消えるかもしれないので、一応今の state を見るが、
+    # session_stateに入っているのは前回のレンダリング結果かもしれない。
+    # Streamlitのライフサイクル上、ウィジェットの値確定 -> コード実行 -> 描画 なので
+    # button callback内で処理するのが正攻法だが、今回はシンプル設計でいく。
     
-    col_act1, col_act2 = st.columns([1, 4])
-    
-    # ボタンのキーをユニークにするためにstatus_filterを使用
     key_suffix = f"_{status_filter}"
     
-    with col_act1:
-        if status_filter == STATUS_UNPROCESSED:
-            if st.button("📤 Register Selected", key=f"btn_reg{key_suffix}"):
-                 process_registration(keyword="batch_submit", status_filter=status_filter)
-                 st.rerun()
-        else:
-            if st.button("↩️ Revert to Unprocessed", key=f"btn_rev{key_suffix}"):
-                process_revert(status_filter)
+    # アクションボタン
+    if status_filter == STATUS_UNPROCESSED:
+        if st.sidebar.button("📤 Register Selected", key=f"btn_reg{key_suffix}", type="primary"):
+                process_registration(keyword="batch_submit", status_filter=status_filter)
                 st.rerun()
-                
-    with col_act2:
-        if status_filter == STATUS_UNPROCESSED:
-            if st.button("🗑️ Exclude Selected", key=f"btn_exc{key_suffix}"):
-                process_exclusion(status_filter)
-                st.rerun()
-
-    st.divider()
+        
+        if st.sidebar.button("🗑️ Exclude Selected", key=f"btn_exc{key_suffix}"):
+            process_exclusion(status_filter)
+            st.rerun()
+            
+    else:
+        # Registered / Excluded
+        if st.sidebar.button("↩️ Revert to Unprocessed", key=f"btn_rev{key_suffix}"):
+            process_revert(status_filter)
+            st.rerun()
 
     # グリッド表示
+    selected_paths = []
+
     cols = st.columns(4)
     for idx, img in enumerate(display_images):
         file_path = img['path']
         
         with cols[idx % 4]:
             try:
-                st.image(file_path, width="stretch")
+                st.image(file_path, width="stretch") # use_container_width=True is better for new streamlit but user might be on old one. 'width' param is deprecated but works.
                 
-                # keyにstatusを含めることでユニークにする
+                # 詳細ボタン
+                if st.button("🔍 Details", key=f"btn_det_{status_filter}_{idx}"):
+                    view_image_details(file_path, img.get('prompt', ''), img.get('tags', ''), img.get('keyword', ''))
+
                 unique_key = f"chk_{status_filter}_{file_path}"
-                
-                # タブ切り替え時はそれぞれのタブでの選択状態を維持したい
-                # しかしシンプルにするため、画面遷移（rerun）で選択はクリアされる前提とするか、
-                # あるいは `current_selection` を辞書型にして `status` ごとに持つか。
-                # ここではシンプルに「現在のタブの選択」のみを扱うようにするが、
-                # st.checkboxはkeyが同じなら状態を保持する。
-                
-                # デフォルト値ロジック
-                # Unprocessedタブは選別作業用なので、デフォルトONにしておくと「悪いものを外す」フローになる。
-                # Registered/Excludedは確認用なので、デフォルトOFF。
                 default_val = (status_filter == STATUS_UNPROCESSED)
-                
-                # ただしrerun直後のデフォルト値復元を考慮する必要があるが、
-                # keyが一意ならStreamlitがstateを覚えてくれるはず。
                 
                 is_selected = st.checkbox("Select", key=unique_key, value=default_val)
                 if is_selected:
                     selected_paths.append(file_path)
                     
-                with st.expander("Details"):
-                    st.caption(f"Prompt: {img.get('prompt', '')[:100]}...")
-                    st.caption(f"Date: {img.get('added_at', '')}")
-
             except Exception as e:
                 st.error(f"Error loading {file_path}")
 
-    # 選択状態をSession Stateに保存 (辞書型で管理したほうが安全だが、今回はシンプルに処理直前に取得する形をとる)
-    # process_xxx() 関数内では、st.session_stateのwidget keyから直接値を取るか、
-    # あるいはここで保存した値を渡すか。
-    # 複数のタブを行き来した場合、 `current_selection` が上書きされるとまずい。
-    # よって、 `current_selection` は 「現在アクティブなタブの選択」 ではなく、
-    # 「処理実行時に参照するための、各タブごとの選択状態」であるべきだが、
-    # Streamlitの仕様上、checkboxの値は常に session_state[unique_key] にある。
-    # process関数側で "chk_{status_filter}_" で始まるキーを集計するのが確実。
-    
-    # 互換性のため、一旦ここに保存するが、キーを分ける
     st.session_state[f'selection_{status_filter}'] = selected_paths
 
 
@@ -185,7 +203,9 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
 
     # ディレクトリ準備
     timestamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
-    safe_keyword = keyword.replace(" ", "_").replace("/", "")
+    # Windowsファイル名禁止文字などを置換し、長さを制限する
+    safe_keyword = "".join(c for c in keyword if c.isalnum() or c in (' ', '_', '-')).strip().replace(" ", "_")
+    safe_keyword = safe_keyword[:50] # パス長制限回避のため50文字でカット
     base_output_dir = os.path.join("output", f"{timestamp}_{safe_keyword}")
     images_dir = os.path.join(base_output_dir, "generated_images")
     os.makedirs(images_dir, exist_ok=True)
@@ -206,12 +226,7 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
             
             generator.generate_image(prompt=draw_prompt, output_path=output_path, size=size)
             
-            csv_data.append({"filename": filename, "prompt": draw_prompt})
-            
-            # DBに即時登録 (ファイルパス, プロンプトなど)
-            # ステータスはデフォルトでUNPROCESSED
-            # StateManagerのscanに頼らず、ここで明示的に同期をとると確実
-            # ただしStateManagerは現在pathをkeyにしているため、scanを呼ぶのが楽
+            csv_data.append({"filename": filename, "prompt": draw_prompt, "keyword": keyword})
             
         except Exception as e:
             st.error(f"Error generating image {i}: {e}")
@@ -220,7 +235,6 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
 
     # CSV保存
     if csv_data:
-        # 必須タグを全レコードに追加
         for item in csv_data:
             item['tags'] = tags
             
@@ -241,11 +255,8 @@ def process_registration(keyword, status_filter=STATUS_UNPROCESSED):
     submit_mgr = SubmissionManager(API_KEY)
     state_mgr = StateManager()
     
-    # パスから必要なメタデータ辞書を復元（DBから）
     target_images = []
     for path in selected:
-        # DB上の情報を取得
-        # パスが絶対パスか相対パスか注意
         rel_path = os.path.relpath(path, os.getcwd()).replace("\\", "/")
         if rel_path in state_mgr.db:
             data = state_mgr.db[rel_path].copy()
@@ -268,7 +279,6 @@ def process_exclusion(status_filter=STATUS_UNPROCESSED):
     state_mgr = StateManager()
     state_mgr.update_status(selected, STATUS_EXCLUDED)
     st.success(f"Excluded {len(selected)} images.")
-
 
 
 def process_revert(status_filter):
