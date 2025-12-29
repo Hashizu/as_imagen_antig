@@ -82,5 +82,17 @@
     "added_at": "2025-12-29T00:14:30.704994",
     "prompt": "A minimalist illustration depicting three stacked cardboard boxes of varying sizes. The boxes are outlined in black hand-drawn lines of different thicknesses, creating a textured appearance. Each box features subtle shadowing in slightly different tonalities, adding depth to the composition. The background is transparent, embracing negative space to highlight the simplicity and sophistication characteristic of contemporary Japanese art. The color palette is limited to a maximum of five shades, enhancing the clean and refined aesthetic. The overall style is modern, using ample negative space and eschewing facial features and text, set against a white backdrop.",
     "updated_at": "2025-12-29T00:40:43.182446"
+  },
+  "output/2025-12-29T23-52-21_未来的なAIロボットが、複数の太い電源ケーブルや送電線から大量の電気エネルギーを直接「吸い取って」いる劇的なシーン。ロボットの口や胸のコアに向かって、青白く激しい電流（稲妻）が渦を巻いて流れ込んでいる。背景は薄暗く、エネルギーの輝きが際立っている。/generated_images/img_000.png": {
+    "status": "UNPROCESSED",
+    "added_at": "2025-12-29T23:53:39.884998",
+    "prompt": "A futuristic AI robot features a sleek, metallic body with a smooth and cool design, highlighted by minimalist Japanese line art. Its face acts as a display, where the eyes glow, suggesting advanced technology and intelligence. On its chest is a large core, pulling in intense, blue-white electric currents from surrounding thick power cables. These currents dynamically swirl and gleam like lightning, emphasizing a sense of energy and motion. The background suggests a dark night city, enhancing the glowing currents and silhouetting the robot, executed with simple, clean lines using a modern illustration style with maximum five colors, ample negative space on a white background.",
+    "tags": "電力, 電力消費, 環境, データセンター, 温暖化, 電気, 環境, 問題, 社会, "
+  },
+  "output/2025-12-29T23-52-21_未来的なAIロボットが、複数の太い電源ケーブルや送電線から大量の電気エネルギーを直接「吸い取って」いる劇的なシーン。ロボットの口や胸のコアに向かって、青白く激しい電流（稲妻）が渦を巻いて流れ込んでいる。背景は薄暗く、エネルギーの輝きが際立っている。/generated_images/img_001.png": {
+    "status": "UNPROCESSED",
+    "added_at": "2025-12-29T23:53:39.886948",
+    "prompt": "A futuristic AI robot showcases a transparent exterior, revealing its intricate internal mechanisms. Designed with multiple joints, it's capable of highly flexible movements. From the robot's mouth, vibrant bluish-white electrical currents whirl vigorously inward. Thick cables connect from a massive power transmission tower, supplying energy to the robot. This scene is set against a desolate, dimly lit background resembling an abandoned factory. Despite the gloom, intense energy lights cast a radiant glow, enveloping the entire setting in an ethereal atmosphere. The style is minimalist Japanese line art, characterized by simple, clean lines, no more than five colors, ample negative space, faceless characters, and a modern illustration approach on a white background, free of text.",
+    "tags": "電力, 電力消費, 環境, データセンター, 温暖化, 電気, 環境, 問題, 社会, "
   }
 }

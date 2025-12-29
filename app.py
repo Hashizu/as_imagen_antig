@@ -40,8 +40,24 @@ def main():
         
         with col2:
             model = st.selectbox("Model", ["gpt-image-1.5", "dall-e-3"], index=0)
-            style = st.selectbox("Style", ["japanese_simple", "photorealistic"], index=0)
-            size = st.selectbox("Size", ["1024x1024", "1024x1792"], index=0)
+            
+            # スタイル定義を取得して動的に設定
+            # インスタンス化しなくても定義自体はimportできるが、クラスメソッドにしたので一旦インスタンスからとるか、
+            # あるいは直接importする方が綺麗。ここではgeneratorを通して取得する。
+            gen_instance = ImageGenerator(API_KEY)
+            styles = gen_instance.get_styles()
+            style_keys = list(styles.keys())
+            style_labels = [styles[k]["label"] for k in style_keys]
+            
+            # ラベルで選択させ、キーに変換する
+            selected_label = st.selectbox("Style", style_labels, index=0)
+            # ラベルからキーを逆引き
+            style = next(k for k, v in styles.items() if v["label"] == selected_label)
+            
+            # スタイルの説明を表示
+            st.info(f"Style Prompt: {styles[style]['idea_prompt']}")
+
+            size = st.selectbox("Size", ["1024x1024", "1024x1536", "1536x1024"], index=0)
         
         if st.button("Generate Images", type="primary"):
             if not keyword:
@@ -181,7 +197,7 @@ def run_generation(keyword, tags, n_ideas, model, style, size):
 
     for i, idea in enumerate(ideas):
         try:
-            draw_prompt = generator.generate_drawing_prompt(idea)
+            draw_prompt = generator.generate_drawing_prompt(idea, style=style)
             
             filename = f"img_{i:03d}.png"
             output_path = os.path.join(images_dir, filename)
