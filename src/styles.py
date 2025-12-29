@@ -3,7 +3,7 @@
 STYLE_DEFINITIONS = {
     "japanese_simple": {
         "label": "Japanese Simple Line Art",
-        "idea_prompt": "ミニマルな5色以下のイラスト。シンプルで手描き風のラインアート、清潔感のある線。背景は透過しており、余白（ネガティブスペース）を効果的に活用。日本の現代的なイラストスタイル。",
+        "idea_prompt": "ミニマルな5色以下のイラスト。シンプルで手描き風のラインアート、清潔感のある線。余白（ネガティブスペース）を効果的に活用。日本の現代的なイラストスタイル。**背景は必ず透過**",
         "drawing_prompt": "Style constraints: Minimalist Japanese line art, simple, clean lines, maximum 5 colors, ample negative space, faceless characters, modern illustration style. White background. No text."
     },
     "photorealistic": {
@@ -25,5 +25,10 @@ STYLE_DEFINITIONS = {
         "label": "Vibrant Anime",
         "idea_prompt": "鮮やかなアニメスタイル。はっきりとした輪郭線、高い彩度、ダイナミックな構図。日本の商業アニメのような高品質な塗り。",
         "drawing_prompt": "Style constraints: High quality anime style, vibrant colors, clear outlines, cel shading, dynamic composition, Makoto Shinkai style lighting. No text."
+    },
+    "None": {
+        "label": "None",
+        "idea_prompt": "",
+        "drawing_prompt": ""
     }
 }

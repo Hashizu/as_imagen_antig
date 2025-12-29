@@ -32,12 +32,14 @@ def main():
     with tab1:
         st.header("New Generation")
         
+        keyword = st.text_input("Keyword (Main Theme)", placeholder="e.g. minimalist cat")
+
         col1, col2 = st.columns(2)
         with col1:
-            keyword = st.text_input("Keyword (Main Theme)", placeholder="e.g. minimalist cat")
             tags = st.text_input("Mandatory Tags", placeholder="comma, separated, tags")
             n_images = st.number_input("Number of Variations", min_value=1, max_value=20, value=5)
-        
+            size = st.selectbox("Size", ["1024x1024", "1024x1536", "1536x1024"], index=0)
+
         with col2:
             model = st.selectbox("Model", ["gpt-image-1.5", "dall-e-3"], index=0)
             
@@ -55,9 +57,9 @@ def main():
             style = next(k for k, v in styles.items() if v["label"] == selected_label)
             
             # スタイルの説明を表示
-            st.info(f"Style Prompt: {styles[style]['idea_prompt']}")
+            with st.expander("Style Details"):
+                st.info(f"Style Prompt: {styles[style]['idea_prompt']}")
 
-            size = st.selectbox("Size", ["1024x1024", "1024x1536", "1536x1024"], index=0)
         
         if st.button("Generate Images", type="primary"):
             if not keyword:
