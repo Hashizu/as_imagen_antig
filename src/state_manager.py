@@ -5,7 +5,6 @@ Manages the lifecycle and status of generated images (Unprocessed, Registered, E
 """
 import os
 import json
-import glob
 from typing import Dict, List
 from datetime import datetime
 import pandas as pd
@@ -46,56 +45,64 @@ class StateManager:
 
     def scan_and_sync(self):
         """
-        ファイルシステムをスキャンし、DBに未登録の画像を 'UNPROCESSED' として追加する。
-        DBにあってファイルが存在しないエントリは現在は保持する（履歴として残す方針）。
+        S3をスキャンし、DBに未登録の画像を 'UNPROCESSED' として追加する。
         """
-        # outputディレクトリ以下の全pngファイルを探索 (generated_imagesフォルダ内)
-        # パターン: output/YYYY-MM-DD_Keyword/generated_images/*.png
-        search_pattern = os.path.join(self.base_dir, "**", "generated_images", "*.png")
-        found_files = glob.glob(search_pattern, recursive=True)
+        from src.storage import S3Manager
+        try:
+            s3 = S3Manager()
+            # output/以下の全オブジェクトを取得
+            objects = s3.list_objects(prefix="output/") # prefix="output/" is base
 
-        updated = False
-        for file_path in found_files:
-            # 絶対パスを相対パスに変換してキーにする
-            rel_path = os.path.relpath(file_path, os.getcwd())
+            found_keys = []
+            updated = False
 
-            # Windowsのパス区切りを統一 ('/'推奨)
-            rel_path = rel_path.replace("\\", "/")
+            for obj in objects:
+                key = obj['Key']
+                # 対象: generated_imagesフォルダ内のpngファイル
+                if "generated_images/" in key and key.endswith(".png"):
+                    found_keys.append(key)
+                    
+                    if key not in self.db:
+                         # 新規発見ファイル
+                        prompt, tags, keyword = self._extract_prompt_if_possible(key)
+                        self.db[key] = {
+                            "status": STATUS_UNPROCESSED,
+                            "added_at": obj['LastModified'].isoformat(),
+                            "prompt": prompt,
+                            "tags": tags,
+                            "keyword": keyword
+                        }
+                        updated = True
 
-            if rel_path not in self.db:
-                # 新規発見ファイル
-                prompt, tags, keyword = self._extract_prompt_if_possible(file_path)
-                self.db[rel_path] = {
-                    "status": STATUS_UNPROCESSED,
-                    "added_at": datetime.now().isoformat(),
-                    "prompt": prompt,
-                    "tags": tags,
-                    "keyword": keyword
-                }
-                updated = True
+            if updated:
+                self.save_db()
+        except Exception as e:
+            print(f"S3 Scan Error: {e}")
 
-        if updated:
-            self.save_db()
-
-    def _extract_prompt_if_possible(self, file_path: str) -> tuple[str, str, str]:
+    def _extract_prompt_if_possible(self, file_key: str) -> tuple[str, str, str]:
         """
-        prompt.csvがあればそこからプロンプトを読み取る（簡易実装）
+        prompt.csvが同じディレクトリにあればそこからプロンプトを読み取る
         Returns: (prompt, tags, keyword)
         """
         try:
-            dir_path = os.path.dirname(file_path)
-            csv_path = os.path.join(dir_path, "prompt.csv")
-            if os.path.exists(csv_path):
-                # ファイル名を取得
-                filename = os.path.basename(file_path)
-                # pandas import moved to top-level
-                df = pd.read_csv(csv_path)
-                # filenameカラムで検索
+            # key: output/xxx/generated_images/img_001.png
+            # dir: output/xxx/generated_images
+            dir_key = os.path.dirname(file_key).replace("\\", "/") # ensure forward slash
+            csv_key = f"{dir_key}/prompt.csv"
+
+            from src.storage import S3Manager
+            s3 = S3Manager()
+            
+            if s3.file_exists(csv_key):
+                csv_bytes = s3.download_file(csv_key)
+                from io import BytesIO
+                df = pd.read_csv(BytesIO(csv_bytes))
+                
+                filename = os.path.basename(file_key)
                 row = df[df['filename'] == filename]
+                
                 if not row.empty:
-                    # keywordカラムがあれば取得、なければ空文字
                     keyword = row.iloc[0].get('keyword', "")
-                    # NaNの場合は空文字にする
                     if pd.isna(keyword):
                         keyword = ""
                     return row.iloc[0]['prompt'], row.iloc[0].get('tags', ""), keyword
@@ -106,21 +113,17 @@ class StateManager:
     def get_images_by_status(self, status: str) -> List[Dict]:
         """指定したステータスの画像リストを返す"""
         result = []
+        # S3の存在確認はコストが高いので、DBにあるものは存在するとみなす方針に変更
+        # もし厳密にやるなら s3.file_exists(path) だがリスト表示のたびにやるのは重い
         for path, data in self.db.items():
             if data["status"] == status:
-                # ファイルが存在するか確認（物理削除済みは返さない方が安全）
-                if os.path.exists(path):
-                    item = data.copy()
-                    item["path"] = path
-                    result.append(item)
+                item = data.copy()
+                item["path"] = path
+                result.append(item)
 
         # added_atの降順（新しい順）にソート
         result.sort(key=lambda x: x.get("added_at", ""), reverse=True)
         return result
-
-    def get_unprocessed_images(self) -> List[Dict]:
-        """未処理画像一覧を返す"""
-        return self.get_images_by_status(STATUS_UNPROCESSED)
 
     def update_status(self, file_paths: List[str], new_status: str):
         """
@@ -128,17 +131,10 @@ class StateManager:
         """
         updated = False
         for path in file_paths:
-            # パス区切りの統一
-            rel_path = path.replace("\\", "/")
-
-            # DBにキーがあるか確認（相対パスで管理しているため）
-            # 入力がフルパスかもしれないので、relpath変換を試みる
-            if os.path.isabs(path):
-                rel_path = os.path.relpath(path, os.getcwd()).replace("\\", "/")
-
-            if rel_path in self.db:
-                self.db[rel_path]["status"] = new_status
-                self.db[rel_path]["updated_at"] = datetime.now().isoformat()
+            # S3 Keyがそのまま渡ってくるはず
+            if path in self.db:
+                self.db[path]["status"] = new_status
+                self.db[path]["updated_at"] = datetime.now().isoformat()
                 updated = True
             else:
                 print(f"Warning: Image not found in DB: {path}")
@@ -150,7 +146,7 @@ if __name__ == "__main__":
     # 簡易動作確認
     mgr = StateManager()
     print(f"DB Path: {mgr.db_path}")
-    unprocessed = mgr.get_unprocessed_images()
+    unprocessed = mgr.get_images_by_status(STATUS_UNPROCESSED)
     print(f"Unprocessed Images: {len(unprocessed)}")
     # for img in unprocessed[:3]:
     #     print(img)

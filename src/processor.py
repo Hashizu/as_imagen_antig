@@ -3,41 +3,41 @@ Image Processor Module.
 
 Handles image manipulation tasks such as upscaling using OpenCV.
 """
-import os
 import cv2
 import numpy as np
-
-# pylint: disable=no-member
+from src.storage import S3Manager
 
 class ImageProcessor:
     """
-    Image processing utility class.
+    Handles image processing tasks, primarily upscaling using OpenCV.
     """
     def __init__(self):
-        pass
+        self.s3 = S3Manager()
 
-    def upscale_image(self, input_path: str, output_path: str, scale_factor: int = 2):
+    def upscale_image(self, input_path: str, output_path: str, scale_factor: int = 2): # pylint: disable=too-many-locals
         """
-        OpenCVのLanczos補間を使用して画像を拡大します。
+        Upscale an image from S3 by the specified factor and save back to S3.
+        S3上の画像をダウンロードし、アップスケール後にS3へアップロードします。
         
         Args:
-            input_path (str): Path to the input image.
-            output_path (str): Path where the upscaled image will be saved.
+            input_path (str): S3 Key of the input image.
+            output_path (str): S3 Key for the upscaled image.
             scale_factor (int): Factor to scale the image by. Default is 2.
         """
         try:
-            # 画像読み込み
-            if not os.path.exists(input_path):
-                raise FileNotFoundError(f"入力ファイルが見つかりません: {input_path}")
+            # S3Manager is already imported
+            s3 = S3Manager()
 
-            # Windowsのパスで非ASCII文字が含まれる場合の対応
-            # cv2.imread はWindows上の非ASCIIパスをうまく扱えないため、
-            # バイナリとして読み込んでからデコードします。
-            img_array = np.fromfile(input_path, np.uint8)
-            img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
+            # S3からダウンロード
+            print(f"Dowloading from S3: {input_path}")
+            img_bytes = s3.download_file(input_path)
+            
+            # メモリ上からデコード
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
 
             if img is None:
-                raise ValueError(f"画像の読み込みに失敗しました: {input_path}")
+                raise ValueError(f"画像のデコードに失敗しました: {input_path}")
 
             # 新しいサイズを計算
             height, width = img.shape[:2]
@@ -50,16 +50,13 @@ class ImageProcessor:
                 interpolation=cv2.INTER_LANCZOS4
             )
 
-            # 出力ディレクトリが存在することを確認
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-            # 画像保存
-            # imwrite も同様にUnicodeパスの問題があるため imencode を使用
+            # エンコード (メモリバッファへ)
             is_success, buffer = cv2.imencode(".png", upscaled_img)
+            
             if is_success:
-                with open(output_path, "wb") as f:
-                    f.write(buffer)
-                print(f"アップスケール画像を保存しました: {output_path}")
+                # S3へアップロード
+                s3.upload_file(buffer.tobytes(), output_path, content_type="image/png")
+                print(f"アップスケール画像をS3に保存しました: {output_path}")
             else:
                 raise ValueError("画像のエンコードに失敗しました")
 

@@ -1,8 +1,14 @@
 [MASTER]
 extension-pkg-allow-list=cv2
 
-[MESSAGES CONTROL]
 disable=
-    C0303, ; Trailing whitespace (handled by formatter usually)
-    C0103, ; Invalid name (too strict for variables)
-    R0903, ; Too few public methods (common for data classes)
+    C0114, # missing-module-docstring
+    C0115, # missing-class-docstring
+    C0116, # missing-function-docstring
+    E1101, # no-member (cv2 issues)
+    R0903, # too-few-public-methods
+    C0415, # import-outside-toplevel
+    W0718, # broad-exception-caught
+    W1309, # f-string-without-interpolation
+    W0612, # unused-variable
+    C0303  # trailing-whitespace (auto-fixable usually, but acceptable)

@@ -162,9 +162,11 @@ class ImageGenerator:
         quality: Optional[str] = None,
         n: int = 1,
         response_format: Optional[str] = None
-    ): # pylint: disable=too-many-arguments, too-many-positional-arguments
+    ): # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
         """
-        指定されたOpenAIモデルを使用して画像を生成し、保存します。
+        Generate an image using OpenAI API and upload to S3.
+        指定されたOpenAIモデルを使用して画像を生成し、S3に保存します。
+        output_path: S3 Key (e.g. "output/timestamp_keyword/generated_images/img_001.png")
         """
         try:
             # パラメータを動的に構築 (NoneのものはAPIに送らない)
@@ -180,6 +182,7 @@ class ImageGenerator:
             if response_format:
                 params["response_format"] = response_format
 
+            print(f"Generating image with params: {params}")
             response = self.client.images.generate(**params)
 
             image_item = response.data[0]
@@ -201,9 +204,11 @@ class ImageGenerator:
                 img_bytes = base64.b64decode(image_content)
 
             if img_bytes:
-                with open(output_path, 'wb') as handler:
-                    handler.write(img_bytes)
-                print(f"画像を保存しました: {output_path}")
+                # S3にアップロード
+                from src.storage import S3Manager
+                s3 = S3Manager()
+                s3.upload_file(img_bytes, output_path, content_type="image/png")
+                print(f"画像をS3に保存しました: {output_path}")
                 return output_path
             
             raise ValueError("API returned no recognized image data (url or b64_json)")

@@ -18,6 +18,7 @@ from src.state_manager import (
     StateManager, STATUS_EXCLUDED, STATUS_UNPROCESSED, STATUS_REGISTERED
 )
 from src.submission_manager import SubmissionManager
+from src.storage import S3Manager
 
 # セットアップ
 load_dotenv()
@@ -176,14 +177,21 @@ def render_gallery_tab():
     render_gallery_content(status_filter)
 
 
-def render_gallery_content(status_filter):
+@st.cache_data(ttl=3600)
+def load_s3_image(key: str) -> bytes:
+    """S3から画像をロードしてキャッシュする"""
+    s3 = S3Manager()
+    return s3.download_file(key)
+
+def render_gallery_content(status_filter): # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     """
     Render gallery content based on the selected status filter.
+    Includes Pagination and Cache.
     """
     state_mgr = StateManager()
-    display_images = state_mgr.get_images_by_status(status_filter)
+    all_images = state_mgr.get_images_by_status(status_filter)
 
-    if not display_images:
+    if not all_images:
         st.info(f"No images found in {status_filter}.")
         # 画像がない場合でも再度スキャンできるボタンがあると便利
         if st.sidebar.button("Forced Rescan"):
@@ -191,7 +199,32 @@ def render_gallery_content(status_filter):
             st.rerun()
         return
 
-    st.write(f"Found {len(display_images)} images.")
+    st.write(f"Found {len(all_images)} images.")
+
+    # Pagination Setup
+    items_per_page = 30
+    if f'page_{status_filter}' not in st.session_state:
+        st.session_state[f'page_{status_filter}'] = 0
+    
+    current_page = st.session_state[f'page_{status_filter}']
+    total_pages = (len(all_images) + items_per_page - 1) // items_per_page
+    
+    start_idx = current_page * items_per_page
+    end_idx = min(start_idx + items_per_page, len(all_images))
+    display_images = all_images[start_idx:end_idx]
+
+    # Pagination UI
+    col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
+    with col_p1:
+        if st.button("Previous", key=f"prev_{status_filter}", disabled=current_page == 0):
+            st.session_state[f'page_{status_filter}'] -= 1
+            st.rerun()
+    with col_p2:
+        st.write(f"Page {current_page + 1} / {total_pages}")
+    with col_p3:
+        if st.button("Next", key=f"next_{status_filter}", disabled=current_page >= total_pages - 1):
+            st.session_state[f'page_{status_filter}'] += 1
+            st.rerun()
 
     if 'selected_images' not in st.session_state:
         st.session_state.selected_images = []
@@ -209,7 +242,8 @@ def render_gallery_content(status_filter):
             type="primary"
         ):
             process_registration(keyword="batch_submit", status_filter=status_filter)
-            st.rerun()
+            # Rerun is tricky here because logic inside process_registration needs to run first
+            # We will handle download button inside process_registration
 
         if st.sidebar.button("🗑️ Exclude Selected", key=f"btn_exc{key_suffix}"):
             process_exclusion(status_filter)
@@ -226,16 +260,17 @@ def render_gallery_content(status_filter):
     cols = st.columns(4)
 
     for idx, img in enumerate(display_images):
-        file_path = img['path']
+        file_path = img['path'] # S3 Key
         with cols[idx % 4]:
             try:
-                # use_container_width=True is better for new streamlit
-                st.image(file_path, width="stretch")
+                # S3から画像を取得して表示
+                img_bytes = load_s3_image(file_path)
+                st.image(img_bytes, width="stretch")
 
                 # 詳細ボタン
-                if st.button("🔍 Details", key=f"btn_det_{status_filter}_{idx}"):
+                if st.button("🔍 Details", key=f"btn_det_{status_filter}_{start_idx + idx}"):
                     view_image_details(
-                        file_path,
+                        img_bytes, # Pass bytes instead of path for display
                         img.get('prompt', ''),
                         img.get('tags', ''),
                         img.get('keyword', '')
@@ -248,7 +283,7 @@ def render_gallery_content(status_filter):
                 if is_selected:
                     selected_paths.append(file_path)
 
-            except Exception: # pylint: disable=broad-exception-caught
+            except Exception as e: # pylint: disable=broad-exception-caught
                 st.error(f"Error loading {file_path}")
 
     st.session_state[f'selection_{status_filter}'] = selected_paths
@@ -256,7 +291,7 @@ def render_gallery_content(status_filter):
 
 def run_generation(
     keyword, tags, n_ideas, model, style, size
-): # pylint: disable=too-many-arguments, too-many-positional-arguments
+): # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
     """
     Execute the image generation process.
     """
@@ -274,16 +309,22 @@ def run_generation(
     )
 
     # CSV保存
+    # CSV保存
     if csv_data:
         for item in csv_data:
             item['tags'] = tags
 
+        s3 = S3Manager()
+        
         df = pd.DataFrame(csv_data)
-        df.to_csv(
-            os.path.join(images_dir, "prompt.csv"),
-            index=False,
-            encoding='utf-8-sig'
-        )
+        # CSVをメモリバッファに出力
+        from io import BytesIO
+        csv_buffer = BytesIO()
+        df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+        
+        # S3へアップロード
+        csv_key = f"{images_dir}/prompt.csv"
+        s3.upload_file(csv_buffer.getvalue(), csv_key, content_type="text/csv")
 
     # 最後にDBスキャンして反映
     # StateManagerをここでインスタンス化して即実行（変数削減）
@@ -292,7 +333,7 @@ def run_generation(
 
 def _setup_output_dirs(keyword: str) -> str:
     """
-    Prepare output directories and return the images directory path.
+    Prepare output S3 key prefix.
     """
     timestamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
     # Windowsファイル名禁止文字などを置換し、長さを制限する
@@ -300,14 +341,18 @@ def _setup_output_dirs(keyword: str) -> str:
         c for c in keyword if c.isalnum() or c in (' ', '_', '-')
     ).strip().replace(" ", "_")
     safe_keyword = safe_keyword[:50]
-    base_output_dir = os.path.join("output", f"{timestamp}_{safe_keyword}")
-    images_dir = os.path.join(base_output_dir, "generated_images")
-    os.makedirs(images_dir, exist_ok=True)
-    return images_dir
+    
+    # S3 prefix: output/timestamp_keyword/generated_images/
+    # 末尾にスラッシュをつけるかどうかは使い勝手次第だが、joinするときに便利なのでつけないでおく
+    # (os.path.joinはWindowsだとバックスラッシュになるので注意、ここでは文字列操作でやる)
+    base_prefix = f"output/{timestamp}_{safe_keyword}"
+    images_prefix = f"{base_prefix}/generated_images"
+
+    return images_prefix
 
 
 def _generate_images_loop(
-        generator, ideas, images_dir, style, size, keyword
+        generator, ideas, images_dir: str, style, size, keyword
 ): # pylint: disable=too-many-arguments, too-many-positional-arguments
     """
     Loop to generate images based on ideas.
@@ -319,7 +364,8 @@ def _generate_images_loop(
         try:
             draw_prompt = generator.generate_drawing_prompt(idea, style=style)
             filename = f"img_{i:03d}.png"
-            output_path = os.path.join(images_dir, filename)
+            # S3 Key構築 (Forward Slash)
+            output_path = f"{images_dir}/{filename}"
 
             generator.generate_image(
                 prompt=draw_prompt,
@@ -332,8 +378,8 @@ def _generate_images_loop(
                 "keyword": keyword
             })
 
-        except Exception as e: # pylint: disable=broad-exception-caught
-            st.error(f"Error generating image {i}: {e}")
+        except Exception: # pylint: disable=broad-exception-caught
+            st.error(f"Error generating image {i}")
 
         progress_bar.progress((i + 1) / len(ideas))
     
