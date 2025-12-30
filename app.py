@@ -36,12 +36,6 @@ def configure_environment():
             for key, value in st.secrets.items():
                 if isinstance(value, str):
                     os.environ[key] = value
-            
-            # Explicitly ensure critical keys are set if present in valid locations
-            if "OPENAI_API_KEY" in st.secrets:
-                os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
-            if "APP_PASSWORD" in st.secrets:
-                os.environ["APP_PASSWORD"] = st.secrets["APP_PASSWORD"]
                 
     except Exception: # pylint: disable=broad-exception-caught
         pass
