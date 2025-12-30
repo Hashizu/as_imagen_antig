@@ -249,6 +249,16 @@ def render_gallery_content(status_filter): # pylint: disable=too-many-locals, to
             process_exclusion(status_filter)
             st.rerun()
 
+        # Download Button (Persistent)
+        if 'latest_zip_data' in st.session_state:
+            st.sidebar.download_button(
+                label="📦 Download Last Submission",
+                data=st.session_state['latest_zip_data'],
+                file_name=st.session_state['latest_zip_name'],
+                mime="application/zip",
+                key="btn_download_zip"
+            )
+
     else:
         # Registered / Excluded
         if st.sidebar.button("↩️ Revert to Unprocessed", key=f"btn_rev{key_suffix}"):
@@ -407,9 +417,16 @@ def process_registration(keyword, status_filter=STATUS_UNPROCESSED):
             target_images.append(data)
 
     with st.spinner(f"Upscaling and Registering {len(target_images)} images..."):
-        submit_mgr.process_submission(target_images, keyword=keyword)
+        zip_data = submit_mgr.process_submission(target_images, keyword=keyword)
 
-    st.success("Registration Complete!")
+    if zip_data:
+        st.session_state['latest_zip_data'] = zip_data
+        st.session_state['latest_zip_name'] = (
+            f"submission_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        )
+        st.success("Registration Complete! Download ready.")
+    else:
+        st.error("Submission failed or no data.")
 
 
 def process_exclusion(status_filter=STATUS_UNPROCESSED):
