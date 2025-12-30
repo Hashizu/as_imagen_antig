@@ -55,7 +55,7 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
+        st.session_state["password_correct"] = None
 
     if not st.session_state["password_correct"]:
         # Show input and button side by side
@@ -72,7 +72,7 @@ def check_password():
                 password_entered()
                 st.rerun()
 
-        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        if st.session_state["password_correct"] is False:
             st.error("😕 Password incorrect")
         
         return False
