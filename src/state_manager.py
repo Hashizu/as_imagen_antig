@@ -4,7 +4,7 @@ State Manager Module.
 Manages the lifecycle and status of generated images (Unprocessed, Registered, Excluded).
 """
 import os
-import json
+
 from typing import Dict, List
 from datetime import datetime
 import pandas as pd
@@ -21,27 +21,31 @@ class StateManager:
     def __init__(self, db_path: str = "data/image_status.json", base_dir: str = "output"):
         self.db_path = db_path
         self.base_dir = base_dir
-        self.db = {} # Key: relative_path, Value: {status, timestamp, meta}
+        self.db = {} # Key: relative_path (or S3 Key), Value: {status, timestamp, meta}
         self.load_db()
         self.scan_and_sync()
 
     def load_db(self):
-        """データベース(JSON)を読み込む"""
-        if os.path.exists(self.db_path):
-            try:
-                with open(self.db_path, 'r', encoding='utf-8') as f:
-                    self.db = json.load(f)
-            except json.JSONDecodeError:
-                print(f"Warning: {self.db_path} is corrupted. Initializing empty DB.")
+        """データベース(JSON)をS3から読み込む"""
+        from src.storage import S3Manager
+        try:
+            s3 = S3Manager()
+            if s3.file_exists(self.db_path):
+                self.db = s3.read_json(self.db_path)
+            else:
                 self.db = {}
-        else:
+        except Exception as e: # pylint: disable=broad-exception-caught
+            print(f"Warning: Failed to load DB from S3 ({e}). Initializing empty DB.")
             self.db = {}
 
     def save_db(self):
-        """データベース(JSON)を保存する"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        with open(self.db_path, 'w', encoding='utf-8') as f:
-            json.dump(self.db, f, indent=2, ensure_ascii=False)
+        """データベース(JSON)をS3に保存する"""
+        from src.storage import S3Manager
+        try:
+            s3 = S3Manager()
+            s3.write_json(self.db, self.db_path)
+        except Exception as e: # pylint: disable=broad-exception-caught
+            print(f"Error saving DB to S3: {e}")
 
     def scan_and_sync(self):
         """

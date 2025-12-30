@@ -91,9 +91,10 @@ def main(): # pylint: disable=too-many-locals, too-many-statements
     print(f"キーワード '{args.keyword}' でモデル '{args.model}' を使用して生成を開始します")
 
     # 履歴保存
+    # 履歴保存 (S3)
     command_str = f"python {' '.join(sys.argv)}"
-    history_file = "history.md"
-    history_content = f"""
+    history_key = "history.md"
+    new_entry = f"""
 ## {timestamp} - {args.keyword}
 - **Command**: `{command_str}`
 - **Model**: {args.model}
@@ -105,10 +106,17 @@ def main(): # pylint: disable=too-many-locals, too-many-statements
 - **Output Dir**: {base_output_dir}
 """
     try:
-        with open(history_file, "a", encoding="utf-8") as f:
-            f.write(history_content)
-    except Exception as e:
-        print(f"履歴保存エラー: {e}")
+        from src.storage import S3Manager
+        s3 = S3Manager()
+        current_history = ""
+        if s3.file_exists(history_key):
+            current_history = s3.read_text(history_key)
+        
+        updated_history = current_history + new_entry
+        s3.write_text(updated_history, history_key)
+        print("履歴をS3に保存しました。")
+    except Exception as e: # pylint: disable=broad-exception-caught
+        print(f"履歴保存エラー(S3): {e}")
 
     # 1. アイデア生成
     print("画像のアイデアを生成中...")

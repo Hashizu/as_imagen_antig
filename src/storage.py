@@ -118,3 +118,40 @@ class S3Manager:
             return True
         except ClientError:
             return False
+
+    def read_text(self, key: str, encoding: str = 'utf-8') -> str:
+        """Reads a text file from S3."""
+        try:
+            data = self.download_file(key)
+            return data.decode(encoding)
+        except Exception as e:
+            print(f"S3 Read Text Error: {e}")
+            raise e
+
+    def write_text(self, content: str, key: str, encoding: str = 'utf-8') -> str:
+        """Writes text content to S3."""
+        try:
+            return self.upload_file(content.encode(encoding), key, content_type="text/plain")
+        except Exception as e:
+            print(f"S3 Write Text Error: {e}")
+            raise e
+
+    def read_json(self, key: str) -> dict:
+        """Reads a JSON file from S3."""
+        import json
+        try:
+            text = self.read_text(key)
+            return json.loads(text)
+        except Exception as e:
+            print(f"S3 Read JSON Error: {e}")
+            raise e
+
+    def write_json(self, data: dict, key: str) -> str:
+        """Writes dictionary as JSON to S3."""
+        import json
+        try:
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            return self.upload_file(text.encode('utf-8'), key, content_type="application/json")
+        except Exception as e:
+            print(f"S3 Write JSON Error: {e}")
+            raise e

@@ -177,7 +177,7 @@ def render_gallery_tab():
     render_gallery_content(status_filter)
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def load_s3_image(key: str) -> bytes:
     """S3から画像をロードしてキャッシュする"""
     s3 = S3Manager()
