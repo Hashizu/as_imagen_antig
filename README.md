@@ -86,6 +86,23 @@ submission_YYYYMMDD_HHMMSS/
 
 - **submit.csv**: これをAdobe StockのContributorポータルでアップロードしてください。
 
+## デプロイ (Streamlit Cloud)
+
+このアプリを Streamlit Cloud で公開する場合の推奨設定です。
+
+1.  GitHub にリポジトリをプッシュします（`.env` は自動的に除外されます）。
+2.  Streamlit Cloud でアプリを作成し、リポジトリと連携します。
+3.  **Advanced Settings** の **Secrets** 欄に、`.env` の内容を TOML 形式で記述します。
+
+    ```toml
+    OPENAI_API_KEY = "sk-..."
+    AWS_ACCESS_KEY_ID = "..."
+    AWS_SECRET_ACCESS_KEY = "..."
+    S3_BUCKET_NAME = "..."
+    AWS_REGION = "ap-northeast-1"
+    ```
+4.  これでクラウド上でも自動的に環境変数が読み込まれ、動作します。
+
 ## 開発者向け情報
 
 ### ディレクトリ構成 (AWS S3)

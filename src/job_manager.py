@@ -27,7 +27,8 @@ class GenerationJob(threading.Thread):
         n_images: int,
         model: str,
         style: str,
-        size: str
+        size: str,
+        creator_ip: str = "127.0.0.1"
     ):
         super().__init__()
         self.api_key = api_key
@@ -37,6 +38,7 @@ class GenerationJob(threading.Thread):
         self.model = model
         self.style = style
         self.size = size
+        self.creator_ip = creator_ip
         
         self._stop_event = threading.Event()
         self.status = {
@@ -109,7 +111,8 @@ class GenerationJob(threading.Thread):
                         "filename": filename,
                         "prompt": draw_prompt,
                         "keyword": self.keyword,
-                        "tags": self.tags # Add tags here for simple DF creation
+                        "tags": self.tags,
+                        "creator_ip": self.creator_ip
                     })
                     self.status["generated_count"] += 1
                     

@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 sys.path.append(os.getcwd())
 
 # pylint: disable=wrong-import-position
+from streamlit.web.server.websocket_headers import _get_websocket_headers
 from src.generator import ImageGenerator
 from src.state_manager import (
     StateManager, STATUS_EXCLUDED, STATUS_UNPROCESSED, STATUS_REGISTERED
@@ -22,12 +23,65 @@ from src.job_manager import GenerationJob
 
 # セットアップ
 load_dotenv()
+
+# Streamlit Cloud対策: st.secretsの内容を環境変数に反映
+try:
+    if hasattr(st, "secrets"):
+        for key, value in st.secrets.items():
+            if isinstance(value, str):
+                os.environ[key] = value
+except Exception: # pylint: disable=broad-exception-caught
+    pass
+
 API_KEY = os.getenv("OPENAI_API_KEY")
 
 if "keyword_input" not in st.session_state:
     st.session_state.keyword_input = ""
 if "tags_input" not in st.session_state:
     st.session_state.tags_input = ""
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    
+    password = os.getenv("APP_PASSWORD")
+    if not password:
+        return True
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == password:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input(
+            "Please enter the password", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    
+    if not st.session_state["password_correct"]:
+        # Password incorrect, show input + error.
+        st.text_input(
+            "Please enter the password", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 Password incorrect")
+        return False
+
+    # Password correct.
+    return True
+
+def get_remote_ip():
+    """Get remote IP address from headers"""
+    try:
+        headers = _get_websocket_headers()
+        if headers:
+            return headers.get("X-Forwarded-For", "127.0.0.1").split(",")[0]
+    except Exception: # pylint: disable=broad-exception-caught
+        pass
+    return "127.0.0.1"
 
 @st.dialog("Image Details")
 def view_image_details(image_path, prompt, tags, keyword):
@@ -60,6 +114,15 @@ def main():
     Main application entry point.
     """
     st.set_page_config(layout="wide", page_title="AS画像屋さん")
+    
+    # 認証チェック
+    if not check_password():
+        st.stop()
+
+    # IPアドレス取得と保持
+    if 'user_ip' not in st.session_state:
+        st.session_state['user_ip'] = get_remote_ip()
+
     st.title("🎨 AS画像屋さん")
 
     if not API_KEY:
@@ -100,28 +163,36 @@ def _render_sidebar_status():
         job = st.session_state['active_job']
         status = job.status
         
-        st.sidebar.info("⚙️ Background Task")
-        st.sidebar.progress(status['progress'])
-        st.sidebar.caption(status['message'])
-        
-        if status['is_running']:
-            if st.sidebar.button("Stop", key="stop_job"):
-                job.cancel()
-                st.rerun()
-        
-        if status['is_complete']:
-            st.sidebar.success("Done!")
-            if st.sidebar.button("Clear Status", key="clear_job"):
-                del st.session_state['active_job']
-                st.rerun()
-        
-        if status['error']:
-            st.sidebar.error("Error occurred")
-            if st.sidebar.button("Clear Error", key="clear_error"):
-                del st.session_state['active_job']
-                st.rerun()
-        
-        st.sidebar.divider()
+        # Compact container
+        with st.sidebar.container():
+            st.markdown("---")
+            
+            # Row 1: Status Message & Action
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                # Use bold text for visibility without box
+                msg = status.get('message', 'Processing...')
+                # Truncate if too long
+                if len(msg) > 25:
+                    msg = msg[:24] + "..."
+                st.markdown(f"**⚙️ {msg}**")
+            with c2:
+                if status['is_running']:
+                    if st.button("⏹", key="stop_job", help="Stop"):
+                        job.cancel()
+                        st.rerun()
+                elif status['is_complete'] or status.get('error'):
+                    if st.button("x", key="clear_job", help="Clear"):
+                        del st.session_state['active_job']
+                        st.rerun()
+
+            # Row 2: Progress (Thin)
+            st.progress(status['progress'])
+
+            if status.get('error'):
+                st.caption(f"Error: {status['error']}")
+                
+            st.markdown("---")
 
 
 def render_generate_tab():
@@ -186,7 +257,8 @@ def render_generate_tab():
         else:
             # Start background job
             job = GenerationJob(
-                API_KEY, keyword, tags, n_images, model, style, size
+                API_KEY, keyword, tags, n_images, model, style, size,
+                creator_ip=st.session_state.get('user_ip', '127.0.0.1')
             )
             job.start()
             st.session_state['active_job'] = job
