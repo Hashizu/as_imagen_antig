@@ -30,12 +30,19 @@ def configure_environment():
     load_dotenv()
 
     # 2. Overlay Streamlit Secrets (for Cloud Deployment)
-    # This allows downstream modules (using os.getenv) to work transparently
     try:
         if hasattr(st, "secrets"):
+            # Generic copy for strings
             for key, value in st.secrets.items():
                 if isinstance(value, str):
                     os.environ[key] = value
+            
+            # Explicitly ensure critical keys are set if present in valid locations
+            if "OPENAI_API_KEY" in st.secrets:
+                os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+            if "APP_PASSWORD" in st.secrets:
+                os.environ["APP_PASSWORD"] = st.secrets["APP_PASSWORD"]
+                
     except Exception: # pylint: disable=broad-exception-caught
         pass
 
@@ -144,7 +151,7 @@ def main():
     st.title("🎨 AS画像屋さん")
 
     if not API_KEY:
-        st.error("OPENAI_API_KEY not found in .env")
+        st.error("🔑 OPENAI_API_KEY not found. Please set it in .env (Local) or Streamlit Secrets (Cloud).")
         return
 
     # サイドバー: バックグラウンドジョブのステータス表示
