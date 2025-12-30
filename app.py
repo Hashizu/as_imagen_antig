@@ -21,16 +21,25 @@ from src.storage import S3Manager
 from src.job_manager import GenerationJob
 
 # セットアップ
-load_dotenv()
+def configure_environment():
+    """
+    Configure environment variables for Local (.env) and Remote (Streamlit Cloud).
+    Prioritizes Streamlit Secrets if available, ensuring os.environ is consistent.
+    """
+    # 1. Load local .env file (if exists)
+    load_dotenv()
 
-# Streamlit Cloud対策: st.secretsの内容を環境変数に反映
-try:
-    if hasattr(st, "secrets"):
-        for key, value in st.secrets.items():
-            if isinstance(value, str):
-                os.environ[key] = value
-except Exception: # pylint: disable=broad-exception-caught
-    pass
+    # 2. Overlay Streamlit Secrets (for Cloud Deployment)
+    # This allows downstream modules (using os.getenv) to work transparently
+    try:
+        if hasattr(st, "secrets"):
+            for key, value in st.secrets.items():
+                if isinstance(value, str):
+                    os.environ[key] = value
+    except Exception: # pylint: disable=broad-exception-caught
+        pass
+
+configure_environment()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
 
