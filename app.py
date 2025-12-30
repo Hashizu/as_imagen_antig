@@ -55,18 +55,26 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input(
-            "Please enter the password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    
+        st.session_state["password_correct"] = False
+
     if not st.session_state["password_correct"]:
-        # Password incorrect, show input + error.
-        st.text_input(
-            "Please enter the password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 Password incorrect")
+        # Show input and button side by side
+        col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+        with col1:
+            st.text_input(
+                "Please enter the password", 
+                type="password", 
+                on_change=password_entered, 
+                key="password"
+            )
+        with col2:
+            if st.button("Login", type="primary"):
+                password_entered()
+                st.rerun()
+
+        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+            st.error("😕 Password incorrect")
+        
         return False
 
     # Password correct.
