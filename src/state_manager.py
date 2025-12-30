@@ -66,17 +66,34 @@ class StateManager:
                 if "generated_images/" in key and key.endswith(".png"):
                     found_keys.append(key)
                     
-                    if key not in self.db:
-                         # 新規発見ファイル
+                    # 新規発見、またはメタデータが欠損している場合は取得を試みる
+                    is_new = key not in self.db
+                    is_missing_meta = False
+                    if not is_new:
+                        current_data = self.db[key]
+                        if not current_data.get("prompt"):
+                            is_missing_meta = True
+                    
+                    if is_new or is_missing_meta:
                         prompt, tags, keyword = self._extract_prompt_if_possible(key)
-                        self.db[key] = {
-                            "status": STATUS_UNPROCESSED,
-                            "added_at": obj['LastModified'].isoformat(),
-                            "prompt": prompt,
-                            "tags": tags,
-                            "keyword": keyword
-                        }
-                        updated = True
+                        
+                        # メタデータが取得できた場合、または新規の場合に更新
+                        if prompt or is_new:
+                            if is_new:
+                                self.db[key] = {
+                                    "status": STATUS_UNPROCESSED,
+                                    "added_at": obj['LastModified'].isoformat(),
+                                    "prompt": prompt,
+                                    "tags": tags,
+                                    "keyword": keyword
+                                }
+                            else:
+                                # 既存だがメタデータが埋まった場合
+                                self.db[key]["prompt"] = prompt
+                                self.db[key]["tags"] = tags
+                                self.db[key]["keyword"] = keyword
+                            
+                            updated = True
 
             if updated:
                 self.save_db()
@@ -129,7 +146,7 @@ class StateManager:
         result.sort(key=lambda x: x.get("added_at", ""), reverse=True)
         return result
 
-    def update_status(self, file_paths: List[str], new_status: str):
+    def update_status(self, file_paths: List[str], new_status: str, extra_metadata: Dict = None):
         """
         指定された画像のステータスを更新する
         """
@@ -139,6 +156,10 @@ class StateManager:
             if path in self.db:
                 self.db[path]["status"] = new_status
                 self.db[path]["updated_at"] = datetime.now().isoformat()
+                
+                if extra_metadata:
+                    self.db[path].update(extra_metadata)
+                
                 updated = True
             else:
                 print(f"Warning: Image not found in DB: {path}")

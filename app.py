@@ -5,7 +5,6 @@ Handles UI, image generation, gallery viewing, and state management.
 import sys
 import os
 from datetime import datetime
-import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -19,6 +18,7 @@ from src.state_manager import (
 )
 from src.submission_manager import SubmissionManager
 from src.storage import S3Manager
+from src.job_manager import GenerationJob
 
 # セットアップ
 load_dotenv()
@@ -66,6 +66,9 @@ def main():
         st.error("OPENAI_API_KEY not found in .env")
         return
 
+    # サイドバー: バックグラウンドジョブのステータス表示
+    _render_sidebar_status()
+
     # サイドバーナビゲーション
     if "navigation_mode" not in st.session_state:
         st.session_state.navigation_mode = "🚀 Generate"
@@ -87,6 +90,38 @@ def main():
     # --- Mode: Gallery ---
     elif mode == "🖼️ Gallery":
         render_gallery_tab()
+
+
+def _render_sidebar_status():
+    """
+    Render background job status in the sidebar.
+    """
+    if 'active_job' in st.session_state:
+        job = st.session_state['active_job']
+        status = job.status
+        
+        st.sidebar.info("⚙️ Background Task")
+        st.sidebar.progress(status['progress'])
+        st.sidebar.caption(status['message'])
+        
+        if status['is_running']:
+            if st.sidebar.button("Stop", key="stop_job"):
+                job.cancel()
+                st.rerun()
+        
+        if status['is_complete']:
+            st.sidebar.success("Done!")
+            if st.sidebar.button("Clear Status", key="clear_job"):
+                del st.session_state['active_job']
+                st.rerun()
+        
+        if status['error']:
+            st.sidebar.error("Error occurred")
+            if st.sidebar.button("Clear Error", key="clear_error"):
+                del st.session_state['active_job']
+                st.rerun()
+        
+        st.sidebar.divider()
 
 
 def render_generate_tab():
@@ -139,13 +174,24 @@ def render_generate_tab():
         with st.expander("Style Details"):
             st.info(f"Style Prompt: {styles[style]['idea_prompt']}")
 
-    if st.button("Generate Images", type="primary"):
+    # 実行ボタン (すでにジョブが走っている場合は無効化)
+    is_running = False
+    if 'active_job' in st.session_state:
+        if st.session_state['active_job'].status['is_running']:
+            is_running = True
+
+    if st.button("Generate Images", type="primary", disabled=is_running):
         if not keyword:
             st.warning("Please enter a keyword.")
         else:
-            with st.spinner(f"Generating {n_images} images for '{keyword}'..."):
-                run_generation(keyword, tags, n_images, model, style, size)
-            st.success("Generation Complete! Go to Gallery tab to review.")
+            # Start background job
+            job = GenerationJob(
+                API_KEY, keyword, tags, n_images, model, style, size
+            )
+            job.start()
+            st.session_state['active_job'] = job
+            st.toast("Generation started in background!", icon="🚀")
+            st.rerun()
 
 
 def render_gallery_tab():
@@ -201,6 +247,122 @@ def render_gallery_content(status_filter): # pylint: disable=too-many-locals, to
 
     st.write(f"Found {len(all_images)} images.")
 
+    if status_filter == STATUS_REGISTERED:
+        _render_registered_gallery(all_images)
+    else:
+        _render_unprocessed_or_excluded_gallery(all_images, status_filter)
+
+
+def _render_registered_gallery(all_images):
+    """
+    Render gallery for Registered images with grouping by submission.
+    """
+    # Group by submission_id
+    grouped = {}
+    legacy_key = "Legacy (No Batch Info)"
+    
+    for img in all_images:
+        sub_id = img.get("submission_id")
+        if not sub_id:
+            sub_id = legacy_key
+        
+        if sub_id not in grouped:
+            grouped[sub_id] = []
+        grouped[sub_id].append(img)
+    
+    # Sort groups: Newest submission first
+    sorted_keys = sorted([k for k in grouped.keys() if k != legacy_key], reverse=True)
+    if legacy_key in grouped:
+        sorted_keys.append(legacy_key)
+        
+    s3 = S3Manager()
+
+    for sub_id in sorted_keys:
+        images = grouped[sub_id]
+        
+        # Header
+        timestamp_str = "Unknown Date"
+        if sub_id != legacy_key:
+            try:
+                # simple parse
+                parts = sub_id.split('/')[-1].split('_')
+                timestamp_str = parts[0]
+            except Exception: # pylint: disable=broad-exception-caught
+                timestamp_str = sub_id
+
+        with st.expander(f"📦 Batch: {timestamp_str} ({len(images)} images)", expanded=True):
+            # Download ZIP Link (Presigned URL)
+            if sub_id != legacy_key:
+                zip_key = f"{sub_id}/submission.zip"
+                
+                # Presigned URLの発行 (有効期限 1時間)
+                url = s3.get_presigned_url(zip_key, expiration=3600)
+                
+                if url:
+                    # HTMLリンクとして表示 (ボタン風のスタイル)
+                    st.markdown(
+                        f"""
+                        <a href="{url}" download style="text-decoration:none;">
+                            <button style="
+                                display: inline-flex;
+                                -webkit-box-align: center;
+                                align-items: center;
+                                -webkit-box-pack: center;
+                                justify-content: center;
+                                font-weight: 400;
+                                padding: 0.25rem 0.75rem;
+                                border-radius: 0.5rem;
+                                min-height: 38.4px;
+                                margin: 0px;
+                                line-height: 1.6;
+                                color: inherit;
+                                width: auto;
+                                user-select: none;
+                                background-color: rgb(255, 255, 255);
+                                border: 1px solid rgba(49, 51, 63, 0.2);
+                            ">
+                                📥 Download ZIP (Direct)
+                            </button>
+                        </a>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.caption("ZIP link unavailable.")
+
+            # Grid Display
+            cols = st.columns(4)
+            for idx, img in enumerate(images):
+                file_path = img['path']
+                with cols[idx % 4]:
+                    try:
+                        img_bytes = load_s3_image(file_path)
+                        st.image(img_bytes, width="stretch")
+
+                        # 詳細ボタン
+                        if st.button("🔍 Details", key=f"btn_det_reg_{file_path}"):
+                            view_image_details(
+                                img_bytes,
+                                img.get('prompt', ''),
+                                img.get('tags', ''),
+                                img.get('keyword', '')
+                            )
+
+                        unique_key = f"chk_reg_{file_path}"
+                        if st.checkbox("Select", key=unique_key):
+                            if 'selection_REGISTERED' not in st.session_state:
+                                st.session_state['selection_REGISTERED'] = []
+                            if file_path not in st.session_state['selection_REGISTERED']:
+                                st.session_state['selection_REGISTERED'].append(file_path)
+
+                    except Exception as e: # pylint: disable=broad-exception-caught
+                        st.error("Error")
+
+
+def _render_unprocessed_or_excluded_gallery(all_images, status_filter):
+    """
+    Render gallery for Unprocessed or Excluded images (Standard Grid).
+    """
     # Pagination Setup
     items_per_page = 30
     if f'page_{status_filter}' not in st.session_state:
@@ -242,8 +404,6 @@ def render_gallery_content(status_filter): # pylint: disable=too-many-locals, to
             type="primary"
         ):
             process_registration(keyword="batch_submit", status_filter=status_filter)
-            # Rerun is tricky here because logic inside process_registration needs to run first
-            # We will handle download button inside process_registration
 
         if st.sidebar.button("🗑️ Exclude Selected", key=f"btn_exc{key_suffix}"):
             process_exclusion(status_filter)
@@ -260,7 +420,7 @@ def render_gallery_content(status_filter): # pylint: disable=too-many-locals, to
             )
 
     else:
-        # Registered / Excluded
+        # Excluded (Registered is handled above)
         if st.sidebar.button("↩️ Revert to Unprocessed", key=f"btn_rev{key_suffix}"):
             process_revert(status_filter)
             st.rerun()
@@ -297,103 +457,6 @@ def render_gallery_content(status_filter): # pylint: disable=too-many-locals, to
                 st.error(f"Error loading {file_path}")
 
     st.session_state[f'selection_{status_filter}'] = selected_paths
-
-
-def run_generation(
-    keyword, tags, n_ideas, model, style, size
-): # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
-    """
-    Execute the image generation process.
-    """
-    generator = ImageGenerator(API_KEY, model_name=model)
-
-    # ディレクトリ準備
-    images_dir = _setup_output_dirs(keyword)
-
-    # アイデア生成
-    st.write("Creating ideas...")
-    ideas = generator.generate_image_description(keyword, n_ideas=n_ideas, style=style)
-
-    csv_data = _generate_images_loop(
-        generator, ideas, images_dir, style, size, keyword
-    )
-
-    # CSV保存
-    # CSV保存
-    if csv_data:
-        for item in csv_data:
-            item['tags'] = tags
-
-        s3 = S3Manager()
-        
-        df = pd.DataFrame(csv_data)
-        # CSVをメモリバッファに出力
-        from io import BytesIO
-        csv_buffer = BytesIO()
-        df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
-        
-        # S3へアップロード
-        csv_key = f"{images_dir}/prompt.csv"
-        s3.upload_file(csv_buffer.getvalue(), csv_key, content_type="text/csv")
-
-    # 最後にDBスキャンして反映
-    # StateManagerをここでインスタンス化して即実行（変数削減）
-    StateManager().scan_and_sync()
-
-
-def _setup_output_dirs(keyword: str) -> str:
-    """
-    Prepare output S3 key prefix.
-    """
-    timestamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
-    # Windowsファイル名禁止文字などを置換し、長さを制限する
-    safe_keyword = "".join(
-        c for c in keyword if c.isalnum() or c in (' ', '_', '-')
-    ).strip().replace(" ", "_")
-    safe_keyword = safe_keyword[:50]
-    
-    # S3 prefix: output/timestamp_keyword/generated_images/
-    # 末尾にスラッシュをつけるかどうかは使い勝手次第だが、joinするときに便利なのでつけないでおく
-    # (os.path.joinはWindowsだとバックスラッシュになるので注意、ここでは文字列操作でやる)
-    base_prefix = f"output/{timestamp}_{safe_keyword}"
-    images_prefix = f"{base_prefix}/generated_images"
-
-    return images_prefix
-
-
-def _generate_images_loop(
-        generator, ideas, images_dir: str, style, size, keyword
-): # pylint: disable=too-many-arguments, too-many-positional-arguments
-    """
-    Loop to generate images based on ideas.
-    """
-    csv_data = []
-    progress_bar = st.progress(0)
-
-    for i, idea in enumerate(ideas):
-        try:
-            draw_prompt = generator.generate_drawing_prompt(idea, style=style)
-            filename = f"img_{i:03d}.png"
-            # S3 Key構築 (Forward Slash)
-            output_path = f"{images_dir}/{filename}"
-
-            generator.generate_image(
-                prompt=draw_prompt,
-                output_path=output_path,
-                size=size
-            )
-            csv_data.append({
-                "filename": filename,
-                "prompt": draw_prompt,
-                "keyword": keyword
-            })
-
-        except Exception: # pylint: disable=broad-exception-caught
-            st.error(f"Error generating image {i}")
-
-        progress_bar.progress((i + 1) / len(ideas))
-    
-    return csv_data
 
 
 def process_registration(keyword, status_filter=STATUS_UNPROCESSED):

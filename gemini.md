@@ -18,13 +18,6 @@ AdobeStock画像生成PJの開発を行います。
 ## 実装について
 - Pythonの仮想環境を用いて開発を行うこと。
 - 小さくテストを行い、問題なければ次の開発に進むこと
-- アウトプット形式は ./example/の中を参照すること
-    - ./YYYY-mm-dd_HH-MM-SS_{キーワード}/generated_images/ に生成した画像を保存すること
-    - ./YYYY-mm-dd_HH-MM-SS_{キーワード}/generated_images/prompt.csv に画像生成時のプロンプトを保存すること
-    - ./YYYY-mm-dd_HH-MM-SS_{キーワード}/submit.csv はAdobeStockに提出するCSVファイルです。現状の規格を明確に守ってください
-- 利用する生成AIは、背景透過機能を使いたいのでOpenAI APIとします（現在はChatGPTを想定）
-    - 画像生成の生成AIは `chatgpt-image-latest` or `GPT Image 1.5`を想定
-        - 指定可能なオプションを調べ、設定できるようにしておいて
-    - タグ生成は`GPT-5 nano`かな
+- ファイルを削除する場合はgitで追跡しているか確認すること。gitで追跡されていないファイルを削除することを禁止します。どうしても削除が必要な場合はユーザに確認しなさい。
 
 - **ユーザへのヒアリングや、ドキュメントは必ず日本語で！**

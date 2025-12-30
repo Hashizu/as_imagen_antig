@@ -96,9 +96,19 @@ class SubmissionManager:
                 submit_df.to_csv(csv_io, index=False, encoding='utf-8-sig')
                 zip_file.writestr("submit.csv", csv_io.getvalue())
 
-        # 5. ステータス更新 (Team A連携)
         if processed_file_paths:
-            self.state_mgr.update_status(processed_file_paths, STATUS_REGISTERED)
+            # ZIPをS3にアップロード
+            zip_buffer.seek(0)
+            zip_key = f"{submission_prefix}/submission.zip"
+            s3.upload_file(zip_buffer.getvalue(), zip_key, content_type="application/zip")
+            print(f"ZIPバックアップをS3に保存しました: {zip_key}")
+
+            # ステータス更新 (submission_idとしてprefixを記録)
+            self.state_mgr.update_status(
+                processed_file_paths, 
+                STATUS_REGISTERED,
+                extra_metadata={"submission_id": submission_prefix}
+            )
 
         print(f"提出バッチ処理完了")
         zip_buffer.seek(0)
