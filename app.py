@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 sys.path.append(os.getcwd())
 
 # pylint: disable=wrong-import-position
-from streamlit.web.server.websocket_headers import _get_websocket_headers
 from src.generator import ImageGenerator
 from src.state_manager import (
     StateManager, STATUS_EXCLUDED, STATUS_UNPROCESSED, STATUS_REGISTERED
@@ -76,9 +75,11 @@ def check_password():
 def get_remote_ip():
     """Get remote IP address from headers"""
     try:
-        headers = _get_websocket_headers()
-        if headers:
-            return headers.get("X-Forwarded-For", "127.0.0.1").split(",")[0]
+        # Streamlit 1.38+ supports st.context.headers
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            if headers:
+                return headers.get("X-Forwarded-For", "127.0.0.1").split(",")[0]
     except Exception: # pylint: disable=broad-exception-caught
         pass
     return "127.0.0.1"
