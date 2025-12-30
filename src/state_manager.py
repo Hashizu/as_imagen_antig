@@ -1,8 +1,14 @@
+"""
+State Manager Module.
+
+Manages the lifecycle and status of generated images (Unprocessed, Registered, Excluded).
+"""
 import os
 import json
 import glob
-from typing import Dict, List, Optional
+from typing import Dict, List
 from datetime import datetime
+import pandas as pd
 
 STATUS_UNPROCESSED = "UNPROCESSED"
 STATUS_REGISTERED = "REGISTERED"
@@ -52,7 +58,7 @@ class StateManager:
         for file_path in found_files:
             # 絶対パスを相対パスに変換してキーにする
             rel_path = os.path.relpath(file_path, os.getcwd())
-            
+
             # Windowsのパス区切りを統一 ('/'推奨)
             rel_path = rel_path.replace("\\", "/")
 
@@ -67,13 +73,14 @@ class StateManager:
                     "keyword": keyword
                 }
                 updated = True
-        
+
         if updated:
             self.save_db()
 
-    def _extract_prompt_if_possible(self, file_path: str) -> tuple[str, str]:
+    def _extract_prompt_if_possible(self, file_path: str) -> tuple[str, str, str]:
         """
         prompt.csvがあればそこからプロンプトを読み取る（簡易実装）
+        Returns: (prompt, tags, keyword)
         """
         try:
             dir_path = os.path.dirname(file_path)
@@ -81,7 +88,7 @@ class StateManager:
             if os.path.exists(csv_path):
                 # ファイル名を取得
                 filename = os.path.basename(file_path)
-                import pandas as pd
+                # pandas import moved to top-level
                 df = pd.read_csv(csv_path)
                 # filenameカラムで検索
                 row = df[df['filename'] == filename]
@@ -92,7 +99,7 @@ class StateManager:
                     if pd.isna(keyword):
                         keyword = ""
                     return row.iloc[0]['prompt'], row.iloc[0].get('tags', ""), keyword
-        except Exception:
+        except Exception: # pylint: disable=broad-exception-caught
             pass
         return "", "", ""
 
@@ -106,7 +113,7 @@ class StateManager:
                     item = data.copy()
                     item["path"] = path
                     result.append(item)
-        
+
         # added_atの降順（新しい順）にソート
         result.sort(key=lambda x: x.get("added_at", ""), reverse=True)
         return result
@@ -123,7 +130,7 @@ class StateManager:
         for path in file_paths:
             # パス区切りの統一
             rel_path = path.replace("\\", "/")
-            
+
             # DBにキーがあるか確認（相対パスで管理しているため）
             # 入力がフルパスかもしれないので、relpath変換を試みる
             if os.path.isabs(path):

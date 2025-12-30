@@ -1,15 +1,27 @@
+"""
+Metadata Manager Module.
+
+Handles generation of titles, tags, and categories using OpenAI API,
+and exports CSV files for Adobe Stock submission.
+"""
 import os
 import json
-import csv
+from typing import Dict, List, Any
 import pandas as pd
 from openai import OpenAI
-from typing import Dict, List, Any
+
+# pylint: disable=broad-exception-caught
 
 class MetadataManager:
+    """
+    Manages image metadata generation and CSV export.
+    """
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
 
-    def get_image_metadata(self, generation_prompt: str, user_tags: List[str]) -> Dict[str, Any]:
+    def get_image_metadata(
+        self, generation_prompt: str, user_tags: List[str]
+    ) -> Dict[str, Any]:
         """
         Adobe Stock用のタイトル、タグ、カテゴリを生成します。
         """
@@ -66,7 +78,9 @@ class MetadataManager:
                 tools=tools,
                 tool_choice={"type": "function", "function": {"name": "set_image_metadata"}},
             )
-            args = json.loads(completion.choices[0].message.tool_calls[0].function.arguments)
+            args = json.loads(
+                completion.choices[0].message.tool_calls[0].function.arguments
+            )
             return args
         except Exception as e:
             print(f"メタデータ生成エラー: {e}")
@@ -76,22 +90,14 @@ class MetadataManager:
     def export_csvs(self, data_rows: List[Dict], output_folder: str):
         """
         prompt.csv と submit.csv をエクスポートします。
-        data_rows は 'filename', 'upscaled_filename', 'title', 'tags', 'category', 'prompt' を含む必要があります。
+        data_rows は 'filename', 'upscaled_filename', 'title', 'tags',
+        'category', 'prompt' を含む必要があります。
         """
-        # prompt.csv (Note: main.py handles prompt.csv explicitly too, but this method might be used or modified. 
-        # Actually main.py calls this but then overwrites prompt.csv? No, main.py writes prompt.csv to generated_images 
-        # while this writes to output_folder(=upscale_dir=root). Verification needed.
-        # Based on main.py, prompt.csv is written TWICE if we aren't careful.
-        # But let's just translate comments first.
-        # main.py passes upscale_dir as output_folder to this function.)
-        
         # prompt.csv
+        # main.py とは別に、提出ディレクトリ用バックアップとして保存
         prompt_df = pd.DataFrame(data_rows)[['filename', 'prompt']]
-        prompt_csv_path = os.path.join(output_folder, "prompt_backup.csv") # Renaming to verify logic later or just translate.
-        # Wait, I should not change logic unless necessary, but the previous code wrote "prompt.csv" here.
-        # main.py writes it to `generated_images`. 
-        # Writing to root as well might be redundant but I will leave it or just translate.
-        prompt_df.to_csv(prompt_csv_path, index=False, encoding='utf-8-sig') 
+        prompt_csv_path = os.path.join(output_folder, "prompt_backup.csv")
+        prompt_df.to_csv(prompt_csv_path, index=False, encoding='utf-8-sig')
 
         # submit.csv
         # 形式: Filename, Title, Keywords, Category
@@ -103,10 +109,10 @@ class MetadataManager:
                 "Keywords": row['tags'],
                 "Category": row['category']
             })
-        
+
         submit_df = pd.DataFrame(submit_data)
         submit_csv_path = os.path.join(output_folder, "submit.csv")
         # AdobeはシンプルなUTF8や標準CSVを好む場合があります。
         submit_df.to_csv(submit_csv_path, index=False, encoding='utf-8')
-        
+
         print(f"CSVを {output_folder} にエクスポートしました")

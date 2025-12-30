@@ -1,9 +1,12 @@
-# src/submission_manager.py
+"""
+Submission Manager Module.
+
+Handles the submission process including upscaling,
+metadata generation, and packaging for Adobe Stock.
+"""
 import os
-import shutil
-import glob
-from typing import List, Dict
 from datetime import datetime
+from typing import List, Dict, Optional
 import pandas as pd
 from tqdm import tqdm
 
@@ -13,7 +16,8 @@ from src.state_manager import StateManager, STATUS_REGISTERED
 
 class SubmissionManager:
     """
-    選択された画像をアップスケールし、提出用フォルダにまとめ、CSVを出力するクラス。
+    Class to upscale selected images, organize them into a submission folder,
+    and generate the required CSV.
     """
     def __init__(self, api_key: str):
         self.processor = ImageProcessor()
@@ -22,15 +26,15 @@ class SubmissionManager:
 
     def process_submission(self, selected_images: List[Dict], keyword: str = "batch"):
         """
-        選択された画像リストを受け取り、提出プロセスを実行する。
-        
+        Execute the submission process for a list of selected images.
+
         Args:
-            selected_images (List[Dict]): StateManagerから取得した画像辞書のリスト。
-                                          'path' キーに相対パスが含まれていること。
-            keyword (str): フォルダ名に使用する識別子。
-        
+            selected_images (List[Dict]): List of image dictionaries from StateManager.
+                                          Must contain 'path' key with relative path.
+            keyword (str): Identifier used for the folder name.
+
         Returns:
-            str: 作成された提出フォルダのパス
+            str: Path to the created submission folder.
         """
         if not selected_images:
             return None
@@ -48,52 +52,13 @@ class SubmissionManager:
 
         for idx, img_info in enumerate(tqdm(selected_images, desc="Upscaling & Copying")):
             try:
-                rel_path = img_info['path']
-                abs_path = os.path.abspath(rel_path)
-                
-                if not os.path.exists(abs_path):
-                    print(f"Skipping missing file: {abs_path}")
-                    continue
+                result = self._process_single_image(idx, img_info, submission_dir)
+                if result:
+                    csv_data.append(result['csv_entry'])
+                    processed_file_paths.append(result['rel_path'])
 
-                # ファイル名生成: upscaled_KEYWORD_001.png
-                # ユニーク性を保つため、元のファイル名を含めるか、連番を振る
-                # ここでは連番と元の名前を組み合わせる
-                original_basename = os.path.splitext(os.path.basename(abs_path))[0]
-                new_filename = f"upscaled_{idx:03d}_{original_basename}.png"
-                output_path = os.path.join(submission_dir, new_filename)
-
-                # 2. アップスケール実行
-                self.processor.upscale_image(abs_path, output_path)
-
-                # 3. メタデータ取得 (プロンプトはDBまたはCSVから取得済みと仮定)
-                # StateManagerのscanでpromptが取得できている場合がある
-                prompt = img_info.get('prompt', "")
-                
-                # もしpromptが空なら、元のフォルダのprompt.csvを探しに行く（念のため）
-                if not prompt:
-                    prompt = self._find_prompt_from_source(abs_path)
-
-                # タグ生成 (MetadataManager利用)
-                # DBから保存されたタグを取得
-                stored_tags_str = img_info.get('tags', "")
-                stored_tags = [t.strip() for t in stored_tags_str.split(",") if t.strip()] if stored_tags_str else []
-                
-                # MetadataManagerに渡す
-                meta = self.metadata_mgr.get_image_metadata(prompt, user_tags=stored_tags)
-
-                csv_data.append({
-                    "filename": os.path.basename(abs_path), # 元ファイル名
-                    "upscaled_filename": new_filename,      # 提出用アップスケールファイル名
-                    "title": meta.get("title", ""),
-                    "tags": meta.get("tags", ""),
-                    "category": meta.get("category", 8),
-                    "prompt": prompt
-                })
-                
-                processed_file_paths.append(rel_path)
-
-            except Exception as e:
-                print(f"Error processing {rel_path}: {e}")
+            except Exception as e: # pylint: disable=broad-exception-caught
+                print(f"Error processing {img_info.get('path')}: {e}")
 
         # 4. CSV出力
         if csv_data:
@@ -106,6 +71,56 @@ class SubmissionManager:
         print(f"提出バッチ処理完了: {submission_dir}")
         return submission_dir
 
+    def _process_single_image(
+        self,
+        idx: int,
+        img_info: Dict,
+        submission_dir: str
+    ) -> Optional[Dict]:
+        """
+        Process a single image: upscale, generate metadata, and prepare CSV entry.
+        """
+        rel_path = img_info['path']
+        abs_path = os.path.abspath(rel_path)
+
+        if not os.path.exists(abs_path):
+            print(f"Skipping missing file: {abs_path}")
+            return None
+
+        # ファイル名生成
+        original_basename = os.path.splitext(os.path.basename(abs_path))[0]
+        new_filename = f"upscaled_{idx:03d}_{original_basename}.png"
+        output_path = os.path.join(submission_dir, new_filename)
+
+        # 2. アップスケール実行
+        self.processor.upscale_image(abs_path, output_path)
+
+        # 3. メタデータ取得
+        prompt = img_info.get('prompt', "")
+        if not prompt:
+            prompt = self._find_prompt_from_source(abs_path)
+
+        # タグ生成
+        stored_tags_str = img_info.get('tags', "")
+        stored_tags = (
+            [t.strip() for t in stored_tags_str.split(",") if t.strip()]
+            if stored_tags_str else []
+        )
+
+        meta = self.metadata_mgr.get_image_metadata(prompt, user_tags=stored_tags)
+
+        return {
+            "csv_entry": {
+                "filename": os.path.basename(abs_path),
+                "upscaled_filename": new_filename,
+                "title": meta.get("title", ""),
+                "tags": meta.get("tags", ""),
+                "category": meta.get("category", 8),
+                "prompt": prompt
+            },
+            "rel_path": rel_path
+        }
+
     def _find_prompt_from_source(self, image_path: str) -> str:
         """元のフォルダのprompt.csvからプロンプトを再取得（予備）"""
         try:
@@ -117,6 +132,6 @@ class SubmissionManager:
                 row = df[df['filename'] == filename]
                 if not row.empty:
                     return row.iloc[0]['prompt']
-        except:
+        except Exception: # pylint: disable=broad-exception-caught
             pass
         return ""

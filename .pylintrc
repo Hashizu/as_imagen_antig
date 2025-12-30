@@ -1,0 +1,8 @@
+[MASTER]
+extension-pkg-allow-list=cv2
+
+[MESSAGES CONTROL]
+disable=
+    C0303, ; Trailing whitespace (handled by formatter usually)
+    C0103, ; Invalid name (too strict for variables)
+    R0903, ; Too few public methods (common for data classes)
